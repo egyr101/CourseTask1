@@ -2,21 +2,21 @@
 using Microsoft.Xna.Framework.Graphics;
 using Myra;
 using Myra.Graphics2D;
-using Myra.Graphics2D.Brushes;
-using Myra.Graphics2D.TextureAtlases;
 using Myra.Graphics2D.UI;
-using SharpDX.Direct2D1.Effects;
+using Myra.Graphics2D.Brushes;
 
 namespace Course1
 {
     public class Game1 : Game
     {
-        private Texture2D _runButtonTexture;
         private GraphicsDeviceManager _graphics;
         private Desktop _desktop;
+        private VerticalStackPanel _commandListContainer;
+        private string _currentPerformer = "Красный";
+        private bool _isPerformerSelected = false; // Флаг выбора исполнителя
 
         public Game1()
-        {   
+        {
             _graphics = new GraphicsDeviceManager(this);
             Content.RootDirectory = "Content";
             IsMouseVisible = true;
@@ -32,143 +32,171 @@ namespace Course1
         protected override void LoadContent()
         {
             _desktop = new Desktop();
-            // Загружаем картинку "button_round" из вашего Content проекта
-            _runButtonTexture = Content.Load<Texture2D>("btn");
             _desktop.Root = BuildMainUI();
-        }   
+        }
 
-        // Изменили тип возвращаемого значения с Widget на Grid
         private Grid BuildMainUI()
         {
-            var root = new Grid();
+            var root = new Grid { RowSpacing = 10, Padding = new Thickness(10) };
             root.RowsProportions.Add(new Proportion(ProportionType.Auto));
             root.RowsProportions.Add(new Proportion(ProportionType.Fill));
 
-            // --- МЕНЮ ---
-            var menuBar = new HorizontalStackPanel { Spacing = 20, Padding = new Thickness(10), Background = new SolidBrush(Color.CornflowerBlue) };
+            var menuBar = new HorizontalStackPanel { Spacing = 20, Background = new SolidBrush(Color.CornflowerBlue) };
             menuBar.Widgets.Add(new Label { Text = "Файл", TextColor = Color.White });
             menuBar.Widgets.Add(new Label { Text = "Настройки", TextColor = Color.White });
             menuBar.Widgets.Add(new Label { Text = "Справка", TextColor = Color.White });
             root.Widgets.Add(menuBar);
 
-            var contentGrid = new Grid { Padding = new Thickness(10), ColumnSpacing = 20 };
-            Grid.SetRow(contentGrid, 1);
-            root.Widgets.Add(contentGrid);
-            contentGrid.ColumnsProportions.Add(new Proportion(ProportionType.Part, 7));
-            contentGrid.ColumnsProportions.Add(new Proportion(ProportionType.Part, 3));
+            var mainContent = new Grid { ColumnSpacing = 20 };
+            Grid.SetRow(mainContent, 1);
+            mainContent.ColumnsProportions.Add(new Proportion(ProportionType.Part, 7));
+            mainContent.ColumnsProportions.Add(new Proportion(ProportionType.Part, 3));
+            root.Widgets.Add(mainContent);
 
-            // --- ЛЕВАЯ ЧАСТЬ (Поле) ---
-            var leftGrid = new Grid { RowSpacing = 10 };
-            Grid.SetColumn(leftGrid, 0);
-            contentGrid.Widgets.Add(leftGrid);
-
+            var leftGrid = new Grid { RowSpacing = 20 };
+            mainContent.Widgets.Add(leftGrid);
             leftGrid.RowsProportions.Add(new Proportion(ProportionType.Fill));
             leftGrid.RowsProportions.Add(new Proportion(ProportionType.Auto));
-            leftGrid.RowsProportions.Add(new Proportion(ProportionType.Auto));
+
 
             var board = new Grid { Background = new SolidBrush(Color.Wheat), ShowGridLines = true };
             for (int i = 0; i < 20; i++) board.ColumnsProportions.Add(new Proportion(ProportionType.Part, 1));
             for (int i = 0; i < 10; i++) board.RowsProportions.Add(new Proportion(ProportionType.Part, 1));
             leftGrid.Widgets.Add(board);
 
-            var statusPanel = new VerticalStackPanel { Spacing = 5 };
-            Grid.SetRow(statusPanel, 1);
-            statusPanel.Widgets.Add(new Label { Text = "Исполнитель красный: Зарядов 5/5", TextColor = Color.Red });
-            statusPanel.Widgets.Add(new Label { Text = "Исполнитель зелёный: Зарядов 5/5", TextColor = Color.Green });
-            leftGrid.Widgets.Add(statusPanel);
+            var bottomPanel = new VerticalStackPanel { Spacing = 10 };
+            Grid.SetRow(bottomPanel, 1);
+            bottomPanel.Widgets.Add(new Label { Text = "Исполнитель красный: Зарядов 5/5", TextColor = Color.Red });
+            bottomPanel.Widgets.Add(new Label { Text = "Исполнитель зелёный: Зарядов 5/5", TextColor = Color.Green });
 
-            // Предполагается, что _runButtonTexture уже загружена в LoadContent
             var runButton = new Button
             {
-                Content = new Label { Text = "Запустить", TextColor = Color.White },
-                Background = new TextureRegion(_runButtonTexture),
-                Padding = new Thickness(40, 20)
+                Background = new SolidBrush(Color.Green),
+                Width = 200,
+                Height = 50
             };
+            runButton.Content = new Label { Text = "Запустить", TextColor = Color.White, HorizontalAlignment = HorizontalAlignment.Center };
+            // 1. Обычное состояние (Зеленый)
+            runButton.Background = new SolidBrush(Color.Green);
 
-            // Эффект наведения
+            // 2. Наведение (Темно-зеленый)
             runButton.MouseEntered += (s, e) => {
-                // Делаем чуть темнее при наведении
-                runButton.Background = new SolidBrush(new Color(0, 100, 0));
+                if (runButton.Background != new SolidBrush(Color.Red)) // Не меняем, если уже нажата
+                    runButton.Background = new SolidBrush(Color.DarkGreen);
             };
+
+            // 3. Уход курсора (Возврат к зеленому)
             runButton.MouseLeft += (s, e) => {
-                // Возвращаем текстуру
-                runButton.Background = new TextureRegion(_runButtonTexture);
+                if (runButton.Background != new SolidBrush(Color.Red))
+                    runButton.Background = new SolidBrush(Color.Green);
             };
 
-            Grid.SetRow(runButton, 2);
-            leftGrid.Widgets.Add(runButton);
+            // 4. Нажатие (Красный)
+            runButton.TouchDown += (s, e) => {
+                runButton.Background = new SolidBrush(Color.Red);
+            };
 
-            // --- ПРАВАЯ ЧАСТЬ ---
-            var rightGrid = new Grid { RowSpacing = 10 };
-            Grid.SetColumn(rightGrid, 1);
-            contentGrid.Widgets.Add(rightGrid);
-            rightGrid.RowsProportions.Add(new Proportion(ProportionType.Part, 1));
-            rightGrid.RowsProportions.Add(new Proportion(ProportionType.Auto));
+            bottomPanel.Widgets.Add(runButton);
+            leftGrid.Widgets.Add(bottomPanel);
 
-            var table = new Grid { Background = new SolidBrush(Color.LightGray), ShowGridLines = true, Padding = new Thickness(5) };
-            for (int i = 0; i < 3; i++) table.ColumnsProportions.Add(new Proportion(ProportionType.Part, 1));
-            for (int i = 0; i < 7; i++) table.RowsProportions.Add(new Proportion(ProportionType.Part, 1));
+            var rightPanel = new VerticalStackPanel { Spacing = 10 };
+            Grid.SetColumn(rightPanel, 1);
+            mainContent.Widgets.Add(rightPanel);
 
-            var h1 = new Label { Text = "Исполнитель" };
-            var h2 = new Label { Text = "Действие" };
-            var h3 = new Label { Text = "Аргументы" };
-            Grid.SetColumn(h2, 1); Grid.SetColumn(h3, 2);
-            table.Widgets.Add(h1); table.Widgets.Add(h2); table.Widgets.Add(h3);
-            rightGrid.Widgets.Add(table);
+            var header = new Grid { Background = new SolidBrush(Color.DarkGray) };
+            header.ColumnsProportions.Add(new Proportion(ProportionType.Part, 1)); // Исполнитель
+            header.ColumnsProportions.Add(new Proportion(ProportionType.Part, 1)); // Действие
+            header.ColumnsProportions.Add(new Proportion(ProportionType.Part, 1)); // Аргумент
+            header.ColumnsProportions.Add(new Proportion(ProportionType.Part, 0.4f)); // Удаление
 
-            // КНОПКИ ДЕЙСТВИЙ (БОЛЕЕ КРУПНЫЕ)
-            var actionGrid = new Grid { ColumnSpacing = 15, RowSpacing = 15 }; // Больше расстояния
-            Grid.SetRow(actionGrid, 1);
-            for (int i = 0; i < 3; i++) actionGrid.ColumnsProportions.Add(new Proportion(ProportionType.Part, 1));
-            for (int i = 0; i < 2; i++) actionGrid.RowsProportions.Add(new Proportion(ProportionType.Part, 1)); // Row заняла место
+            header.Widgets.Add(new Label { Text = "Исполнитель", TextColor = Color.Black });
+            var h2 = new Label { Text = "Действие", TextColor = Color.Black }; Grid.SetColumn(h2, 1); header.Widgets.Add(h2);
+            var h3 = new Label { Text = "Аргумент", TextColor = Color.Black }; Grid.SetColumn(h3, 2); header.Widgets.Add(h3);
+            var h4 = new Label { Text = "Удалить", TextColor = Color.Black }; Grid.SetColumn(h4, 3); header.Widgets.Add(h4);
+            rightPanel.Widgets.Add(header);
 
-            // Обновленная функция для создания КРУПНЫХ кнопок
-            void AddButton(string text, int col, int row, Grid parent, Color bgColor, Color textColor)
-            {
-                var btn = new Button
-                {
-                    Content = new Label { Text = text, TextColor = textColor },
-                    Background = new SolidBrush(bgColor),
+            _commandListContainer = new VerticalStackPanel { Height = 300 };
+            rightPanel.Widgets.Add(_commandListContainer);
 
-                    // УВЕЛИЧИВАЕМ РАЗМЕР:
-                    Padding = new Thickness(20, 25), // Больше отступов внутри
+            var buttonsGrid = new Grid { ColumnSpacing = 5, RowSpacing = 5 };
+            for (int i = 0; i < 3; i++) buttonsGrid.ColumnsProportions.Add(new Proportion(ProportionType.Part, 1));
+            for (int i = 0; i < 2; i++) buttonsGrid.RowsProportions.Add(new Proportion(ProportionType.Part, 1));
 
-                    // РАСТЯГИВАЕМ НА ВСЮ ЯЧЕЙКУ:
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
-                    VerticalAlignment = VerticalAlignment.Stretch
+            AddBtn(buttonsGrid, "Исп. красный", 0, 0, Color.DarkRed, Color.White, () => {
+                _currentPerformer = "Красный";
+                _isPerformerSelected = true;
+            });
+            AddBtn(buttonsGrid, "Поворот", 1, 0, Color.LightGray, Color.Black, () => {
+                if (_isPerformerSelected) AddRow("Поворот", "-");
+            });
+            AddBtn(buttonsGrid, "Вперёд", 2, 0, Color.LightGray, Color.Black, () => {
+                if (!_isPerformerSelected) return; // Выход, если не выбран
+                var dialog = new Dialog { Title = "Введите дистанцию", Content = new TextBox() };
+                dialog.ButtonOk.Click += (s, e) => {
+                    AddRow("Вперёд", ((TextBox)dialog.Content).Text);
+                    dialog.Close();
                 };
+                dialog.ShowModal(_desktop);
+            });
+            AddBtn(buttonsGrid, "Исп. зелёный", 0, 1, Color.DarkGreen, Color.White, () => {
+                _currentPerformer = "Зелёный";
+                _isPerformerSelected = true;
+            });
+            AddBtn(buttonsGrid, "Поворот пр.", 1, 1, Color.LightGray, Color.Black, () => {
+                if (_isPerformerSelected) AddRow("Поворот против", "-");
+            });
+            AddBtn(buttonsGrid, "Разряд", 2, 1, Color.LightGray, Color.Black, () => { if (_isPerformerSelected) AddRow("Разряд", "-"); });
 
-                Grid.SetColumn(btn, col);
-                Grid.SetRow(btn, row);
-                parent.Widgets.Add(btn);
-            }
-
-            // Добавляем кнопки
-            AddButton("Исп. красный", 0, 0, actionGrid, Color.DarkRed, Color.White);
-            AddButton("Поворот по часовой", 1, 0, actionGrid, Color.LightGray, Color.Black);
-            AddButton("Вперёд", 2, 0, actionGrid, Color.LightGray, Color.Black);
-
-            AddButton("Исп. зелёный", 0, 1, actionGrid, Color.DarkGreen, Color.White);
-            AddButton("Поворот против", 1, 1, actionGrid, Color.LightGray, Color.Black);
-            AddButton("Разряд", 2, 1, actionGrid, Color.LightGray, Color.Black);
-
-            rightGrid.Widgets.Add(actionGrid);
-
+            rightPanel.Widgets.Add(buttonsGrid);
             return root;
         }
 
-        private void AddHoverEffect(Button btn, Color normalColor)
+        private void AddBtn(Grid grid, string text, int c, int r, Color color, Color btnColor, System.Action onClick)
         {
-            // При наведении делаем цвет чуть темнее (смешиваем с черным на 20%)
-            Color hoverColor = Color.Lerp(normalColor, Color.Black, 0.2f);
+            var btn = new Button
+            {
+                Background = new SolidBrush(color),
+                Width = 120,    // Фиксированная ширина
+                Height = 40,    // Фиксированная высота
+                HorizontalAlignment = HorizontalAlignment.Center
+            }; ;
+            btn.Content = new Label { Text = text, HorizontalAlignment = HorizontalAlignment.Center, TextColor=btnColor};
+            btn.Click += (s, e) => onClick();
+            Grid.SetColumn(btn, c); Grid.SetRow(btn, r);
+            grid.Widgets.Add(btn);
+        }
 
-            btn.MouseEntered += (s, e) => btn.Background = new SolidBrush(hoverColor);
-            btn.MouseLeft += (s, e) => btn.Background = new SolidBrush(normalColor);
+        private void AddRow(string action, string arg)
+        {
+            var row = new Grid { Background = new SolidBrush(Color.WhiteSmoke), Padding = new Thickness(2) };
+            row.ColumnsProportions.Add(new Proportion(ProportionType.Part, 1));
+            row.ColumnsProportions.Add(new Proportion(ProportionType.Part, 1));
+            row.ColumnsProportions.Add(new Proportion(ProportionType.Part, 1));
+            row.ColumnsProportions.Add(new Proportion(ProportionType.Part, 0.4f));
+
+            row.Widgets.Add(new Label { Text = _currentPerformer, TextColor = Color.Black });
+
+            var act = new Label { Text = action, TextColor = Color.Black };
+            Grid.SetColumn(act, 1); row.Widgets.Add(act);
+
+            var ar = new Label { Text = arg, TextColor = Color.Black };
+            Grid.SetColumn(ar, 2); row.Widgets.Add(ar);
+
+            // Кнопка удаления
+            var delBtn = new Button { Content = new Label { Text = "X", TextColor = Color.Red } };
+            delBtn.Click += (s, e) => _commandListContainer.Widgets.Remove(row);
+            Grid.SetColumn(delBtn, 3);
+            row.Widgets.Add(delBtn);
+
+            _commandListContainer.Widgets.Add(row);
+
+            // Сбрасываем выбор после добавления
+            _isPerformerSelected = false;
         }
 
         protected override void Draw(GameTime gameTime)
         {
-            GraphicsDevice.Clear(Color.CornflowerBlue); // Цвет фона окна
+            GraphicsDevice.Clear(Color.CornflowerBlue);
             base.Draw(gameTime);
             _desktop.Render();
         }
