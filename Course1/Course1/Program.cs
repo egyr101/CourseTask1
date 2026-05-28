@@ -1,2 +1,2 @@
-﻿using var game = new Course1.Game1();
+﻿using var game = new DroneSimulator.Game1();
 game.Run();
