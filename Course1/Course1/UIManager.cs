@@ -2,6 +2,7 @@
 using Myra.Graphics2D;
 using Myra.Graphics2D.UI;
 using Myra.Graphics2D.Brushes;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -20,6 +21,7 @@ namespace DroneSimulator
 
     public class UIManager
     {
+        public event Action<IReadOnlyList<CommandRow>>? RunRequested;
         private Desktop _desktop;
         private Grid _tableGrid;
         private ScrollViewer _tableScroll;
@@ -67,6 +69,21 @@ namespace DroneSimulator
 
         public void Render() => _desktop.Render();
 
+        public IReadOnlyList<CommandRow> GetCommandRows()
+        {
+            return _tableData
+                .Select(row => new CommandRow
+                {
+                    Target1 = row.Target1,
+                    Action1 = row.Action1,
+                    Argument1 = row.Argument1,
+                    Target2 = row.Target2,
+                    Action2 = row.Action2,
+                    Argument2 = row.Argument2
+                })
+                .ToList();
+        }
+
         private void StyleButton(TextButton button, IBrush background, int height = 35)
         {
             button.Background = background;
@@ -82,9 +99,26 @@ namespace DroneSimulator
         private Widget CreateTopMenu()
         {
             var menuPanel = new HorizontalStackPanel { Background = _headerGreen, Spacing = 15, Padding = new Myra.Graphics2D.Thickness(10, 5) };
-            string[] menuItems = { "Дроны", "Файл", "Выполнить", "Шаг", "До отметки", "На начало", "Помощь", "Настройки" };
-            foreach (var item in menuItems)
+
+            string[] menuItemsBeforeRun = { "Дроны", "Файл" };
+            foreach (var item in menuItemsBeforeRun)
                 menuPanel.Widgets.Add(new Label { Text = item, TextColor = Color.White });
+
+            var runButton = new TextButton
+            {
+                Text = "Выполнить",
+                Background = null,
+                OverBackground = null,
+                PressedBackground = null,
+                TextColor = Color.White
+            };
+            runButton.TouchDown += (s, a) => RunRequested?.Invoke(GetCommandRows());
+            menuPanel.Widgets.Add(runButton);
+
+            string[] menuItemsAfterRun = { "Шаг", "До отметки", "На начало", "Помощь", "Настройки" };
+            foreach (var item in menuItemsAfterRun)
+                menuPanel.Widgets.Add(new Label { Text = item, TextColor = Color.White });
+
             return menuPanel;
         }
 
@@ -121,7 +155,7 @@ namespace DroneSimulator
                 {
                     var drone = mapRenderer.Drones[droneIndex];
                     if (drone.GridPosition.Y - 1 >= 0)
-                        drone.GridPosition += new Vector2(0, -1);
+                        drone.MoveTo(drone.GridPosition + new Vector2(0, -1));
                 }
             };
 
@@ -133,7 +167,7 @@ namespace DroneSimulator
                 {
                     var drone = mapRenderer.Drones[droneIndex];
                     if (drone.GridPosition.X - 1 >= 0)
-                        drone.GridPosition += new Vector2(-1, 0);
+                        drone.MoveTo(drone.GridPosition + new Vector2(-1, 0));
                 }
             };
 
@@ -156,7 +190,7 @@ namespace DroneSimulator
                 {
                     var drone = mapRenderer.Drones[droneIndex];
                     if (drone.GridPosition.X + 1 < mapRenderer.GridWidth)
-                        drone.GridPosition += new Vector2(1, 0);
+                        drone.MoveTo(drone.GridPosition + new Vector2(1, 0));
                 }
             };
 
@@ -168,7 +202,7 @@ namespace DroneSimulator
                 {
                     var drone = mapRenderer.Drones[droneIndex];
                     if (drone.GridPosition.Y + 1 < mapRenderer.GridHeight)
-                        drone.GridPosition += new Vector2(0, 1);
+                        drone.MoveTo(drone.GridPosition + new Vector2(0, 1));
                 }
             };
 
