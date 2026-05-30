@@ -13,6 +13,15 @@ namespace DroneSimulator
         private readonly Queue<List<DroneCommand>> _ticks = new();
         private readonly Dictionary<int, Queue<DroneCommandType>> _activeTickQueues = new();
 
+        private AlgorithmSnapshot? _initialSnapshot;
+
+        public event Action<string>? ErrorOccurred;
+        public event Action<AlgorithmResult>? Completed;
+        public event Action<IReadOnlyList<DroneChargeInfo>>? ChargesChanged;
+
+        private int _algorithmScore;
+        private int _initialWeedCount;
+
         public bool IsRunning { get; private set; }
         public bool IsCompleted { get; private set; }
         public string? LastError { get; private set; }
@@ -26,35 +35,78 @@ namespace DroneSimulator
                 .Select(drone => new DroneRuntimeState(drone))
                 .ToList();
 
+            DistributeChargesByWeedCount();
+
             foreach (var droneState in _drones)
             {
                 droneState.Drone.SetRotationInstant(GetRotationForDirection(droneState.Direction));
             }
         }
 
+        private void DistributeChargesByWeedCount()
+        {
+            if (_drones.Count == 0)
+                return;
+
+            int totalCharges = _mapRenderer.WeedField.TotalCount;
+            int baseCharges = totalCharges / _drones.Count;
+            int extraCharges = totalCharges % _drones.Count;
+
+            for (int i = 0; i < _drones.Count; i++)
+            {
+                int charges = baseCharges + (i < extraCharges ? 1 : 0);
+                _drones[i].Charges = charges;
+                _drones[i].InitialCharges = charges;
+            }
+        }
+
+        private static string GetDroneName(int index)
+        {
+            return index switch
+            {
+                0 => "Красный",
+                1 => "Зелёный",
+                _ => $"Дрон {index + 1}"
+            };
+        }
+
         public void Start(IEnumerable<CommandRow> rows)
         {
+            NotifyChargesChanged();
+
             _ticks.Clear();
             _activeTickQueues.Clear();
             LastError = null;
             LastMessage = null;
             IsCompleted = false;
+            IsRunning = false;
+            _algorithmScore = 0;
+            _initialWeedCount = _mapRenderer.WeedField.TotalCount;
 
-            foreach (var tick in CommandTableParser.Parse(rows))
+            _initialSnapshot = CreateSnapshot();
+
+            try
             {
-                _ticks.Enqueue(tick);
-            }
+                foreach (var tick in CommandTableParser.Parse(rows))
+                {
+                    _ticks.Enqueue(tick);
+                }
 
-            if (!_mapRenderer.WeedField.HasAliveWeeds)
+                if (!_mapRenderer.WeedField.HasAliveWeeds)
+                {
+                    CompleteAlgorithm();
+                    return;
+                }
+
+                IsRunning = _ticks.Count > 0;
+
+                if (!IsRunning)
+                    LastMessage = "Нет команд для выполнения.";
+            }
+            catch (Exception ex)
             {
-                CompleteAlgorithm();
-                return;
+                Fail(ex.Message);
             }
-
-            IsRunning = _ticks.Count > 0;
-
-            if (!IsRunning)
-                LastMessage = "Нет команд для выполнения.";
         }
 
         public void Stop()
@@ -62,6 +114,21 @@ namespace DroneSimulator
             IsRunning = false;
             _ticks.Clear();
             _activeTickQueues.Clear();
+        }
+
+        public IReadOnlyList<DroneChargeInfo> GetChargeInfo()
+        {
+            return _drones
+                .Select((droneState, index) => new DroneChargeInfo(
+                    GetDroneName(index),
+                    droneState.Charges,
+                    droneState.InitialCharges))
+                .ToList();
+        }
+
+        public void NotifyChargesChanged()
+        {
+            ChargesChanged?.Invoke(GetChargeInfo());
         }
 
         public void Update(GameTime gameTime)
@@ -83,8 +150,7 @@ namespace DroneSimulator
                 {
                     if (!HasWaitingTicks())
                     {
-                        IsRunning = false;
-                        LastMessage = "Алгоритм завершился, но на поле остались сорняки.";
+                        Fail("Алгоритм завершился, но на поле остались сорняки.");
                         return;
                     }
 
@@ -98,9 +164,57 @@ namespace DroneSimulator
             }
             catch (Exception ex)
             {
-                LastError = ex.Message;
-                Stop();
+                Fail(ex.Message);
             }
+        }
+
+        private AlgorithmSnapshot CreateSnapshot()
+        {
+            var snapshot = new AlgorithmSnapshot();
+
+            foreach (var droneState in _drones)
+            {
+                snapshot.Drones.Add(new DroneRuntimeSnapshot(
+                    droneState.Drone.GridPosition,
+                    droneState.Direction,
+                    droneState.Charges,
+                    droneState.InitialCharges));
+            }
+
+            snapshot.Weeds.AddRange(_mapRenderer.WeedField.CreateSnapshot());
+            return snapshot;
+        }
+
+        private void RestoreInitialSnapshot()
+        {
+            if (_initialSnapshot == null)
+                return;
+
+            for (int i = 0; i < _initialSnapshot.Drones.Count && i < _drones.Count; i++)
+            {
+                var snapshot = _initialSnapshot.Drones[i];
+                var droneState = _drones[i];
+
+                droneState.Direction = snapshot.Direction;
+                droneState.Charges = snapshot.Charges;
+                droneState.InitialCharges = snapshot.InitialCharges;
+                droneState.Drone.SetPositionInstant(snapshot.GridPosition);
+                droneState.Drone.SetRotationInstant(GetRotationForDirection(snapshot.Direction));
+            }
+
+            _mapRenderer.WeedField.RestoreSnapshot(_initialSnapshot.Weeds);
+            NotifyChargesChanged();
+        }
+
+        private void Fail(string errorMessage)
+        {
+            LastError = errorMessage;
+            LastMessage = null;
+
+            RestoreInitialSnapshot();
+            Stop();
+
+            ErrorOccurred?.Invoke(errorMessage);
         }
 
         private bool AnyDroneIsAnimating()
@@ -131,7 +245,14 @@ namespace DroneSimulator
         {
             IsCompleted = true;
             LastMessage = "Все сорняки уничтожены. Алгоритм завершён.";
+
+            var result = new AlgorithmResult(
+                _algorithmScore,
+                _mapRenderer.WeedField.DestroyedCount,
+                _initialWeedCount);
+
             Stop();
+            Completed?.Invoke(result);
         }
 
         private void LoadNextTick()
@@ -205,14 +326,17 @@ namespace DroneSimulator
             {
                 case DroneCommandType.MoveForward:
                     MoveForward(droneState);
+                    AddScoreForCommand(command);
                     break;
 
                 case DroneCommandType.TurnLeft:
                     TurnDroneLeft(droneState);
+                    AddScoreForCommand(command);
                     break;
 
                 case DroneCommandType.TurnRight:
                     TurnDroneRight(droneState);
+                    AddScoreForCommand(command);
                     break;
 
                 case DroneCommandType.Attack:
@@ -221,6 +345,20 @@ namespace DroneSimulator
             }
         }
 
+        private void AddScoreForCommand(DroneCommandType command)
+        {
+            switch (command)
+            {
+                case DroneCommandType.MoveForward:
+                    _algorithmScore += 2;
+                    break;
+
+                case DroneCommandType.TurnLeft:
+                case DroneCommandType.TurnRight:
+                    _algorithmScore += 1;
+                    break;
+            }
+        }
 
         private static void TurnDroneLeft(DroneRuntimeState droneState)
         {
@@ -256,6 +394,7 @@ namespace DroneSimulator
             }
 
             droneState.Charges--;
+            NotifyChargesChanged();
 
             Vector2 targetPosition =
                 droneState.Drone.GridPosition +
@@ -323,7 +462,6 @@ namespace DroneSimulator
         {
             return (DroneFacing)(((int)direction + 1) % 4);
         }
-
 
         private static float GetRotationForDirection(DroneFacing direction)
         {

@@ -7,14 +7,20 @@ namespace DroneSimulator
         public Vector2 GridPosition { get; }
         public bool IsDestroyed { get; private set; }
 
-        public Weed(Vector2 gridPosition)
+        public Weed(Vector2 gridPosition, bool isDestroyed = false)
         {
             GridPosition = gridPosition;
+            IsDestroyed = isDestroyed;
         }
 
         public void Destroy()
         {
             IsDestroyed = true;
+        }
+
+        public void Restore()
+        {
+            IsDestroyed = false;
         }
     }
 }

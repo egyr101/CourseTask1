@@ -1,4 +1,4 @@
-﻿using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework;
 using Myra.Graphics2D;
 using Myra.Graphics2D.UI;
 using Myra.Graphics2D.Brushes;
@@ -30,6 +30,13 @@ namespace DroneSimulator
         // Наша "База данных" таблицы
         private List<CommandRow> _tableData = new List<CommandRow>();
 
+        private Panel _messagePanel;
+        private Label _messageTitleLabel;
+        private Label _messageTextLabel;
+
+        private VerticalStackPanel _chargeInfoPanel;
+        private readonly List<Label> _chargeInfoLabels = new List<Label>();
+
         // Цветовая палитра
         private IBrush _bgGreen;
         private IBrush _headerGreen;
@@ -59,12 +66,105 @@ namespace DroneSimulator
             var rootContainer = new VerticalStackPanel { Background = _bgGreen };
 
             rootContainer.Widgets.Add(CreateTopMenu());
+
+            _messagePanel = CreateMessagePanel();
+            rootContainer.Widgets.Add(_messagePanel);
+
             rootContainer.Widgets.Add(CreateMainContent(mapRenderer));
 
             _desktop.Root = rootContainer;
 
             // Добавляем первую пустую строку при запуске
             AddEmptyRow();
+        }
+
+        private Panel CreateMessagePanel()
+        {
+            _messageTitleLabel = new Label
+            {
+                Text = "Ошибка выполнения",
+                TextColor = Color.White,
+                Margin = new Myra.Graphics2D.Thickness(8, 4)
+            };
+
+            _messageTextLabel = new Label
+            {
+                Text = string.Empty,
+                TextColor = Color.White,
+                Margin = new Myra.Graphics2D.Thickness(8, 4)
+            };
+
+            var closeButton = new TextButton
+            {
+                Text = "Закрыть",
+                Width = 110,
+                Margin = new Myra.Graphics2D.Thickness(8, 4)
+            };
+            StyleButton(closeButton, _btnDark, 32);
+            closeButton.TouchDown += (s, a) => HideMessage();
+
+            var content = new VerticalStackPanel
+            {
+                Spacing = 4,
+                Padding = new Myra.Graphics2D.Thickness(8)
+            };
+
+            content.Widgets.Add(_messageTitleLabel);
+            content.Widgets.Add(_messageTextLabel);
+            content.Widgets.Add(closeButton);
+
+            var panel = new Panel
+            {
+                Background = new SolidBrush(new Color(170, 55, 45)),
+                Margin = new Myra.Graphics2D.Thickness(10, 8),
+                Height = 120,
+                Visible = false
+            };
+
+            panel.Widgets.Add(content);
+            return panel;
+        }
+
+        public void ShowError(string message)
+        {
+            _messagePanel.Background = new SolidBrush(new Color(170, 55, 45));
+            _messageTitleLabel.Text = "Ошибка выполнения алгоритма";
+            _messageTextLabel.Text = message + " Карта возвращена в начальное состояние.";
+            _messagePanel.Visible = true;
+        }
+
+        public void ShowAlgorithmResult(AlgorithmResult result)
+        {
+            _messagePanel.Background = new SolidBrush(new Color(45, 145, 80));
+            _messageTitleLabel.Text = "Алгоритм выполнен успешно";
+            _messageTextLabel.Text =
+                $"Оценка алгоритма - {result.Score}\n" +
+                $"Уничтожено {result.DestroyedWeeds} из {result.InitialWeeds}";
+            _messagePanel.Visible = true;
+        }
+
+        public void HideMessage()
+        {
+            _messagePanel.Visible = false;
+        }
+
+        public void UpdateDroneCharges(IReadOnlyList<DroneChargeInfo> chargeInfos)
+        {
+            _chargeInfoLabels.Clear();
+            _chargeInfoPanel.Widgets.Clear();
+
+            foreach (var info in chargeInfos)
+            {
+                var label = new Label
+                {
+                    Text = $"{info.DroneName} дрон : {info.CurrentCharges}/{info.InitialCharges} зарядов осталось",
+                    TextColor = Color.Black,
+                    Margin = new Myra.Graphics2D.Thickness(0, 3)
+                };
+
+                _chargeInfoLabels.Add(label);
+                _chargeInfoPanel.Widgets.Add(label);
+            }
         }
 
         public void Render() => _desktop.Render();
@@ -82,6 +182,82 @@ namespace DroneSimulator
                     Argument2 = row.Argument2
                 })
                 .ToList();
+        }
+
+
+        private IReadOnlyList<CommandRow> PrepareCommandRowsForRun()
+        {
+            RemoveIncompleteCommandsFromTable();
+            return GetCommandRows();
+        }
+
+        private void RemoveIncompleteCommandsFromTable()
+        {
+            var normalizedRows = new List<CommandRow>();
+
+            foreach (var row in _tableData)
+            {
+                var commands = new List<CommandRow>();
+
+                if (IsCompleteCommand(row.Target1, row.Action1))
+                {
+                    commands.Add(new CommandRow
+                    {
+                        Target1 = row.Target1,
+                        Action1 = row.Action1,
+                        Argument1 = row.Argument1
+                    });
+                }
+
+                if (IsCompleteCommand(row.Target2, row.Action2))
+                {
+                    commands.Add(new CommandRow
+                    {
+                        Target1 = row.Target2,
+                        Action1 = row.Action2,
+                        Argument1 = row.Argument2
+                    });
+                }
+
+                if (commands.Count == 0)
+                    continue;
+
+                var normalizedRow = new CommandRow
+                {
+                    Target1 = commands[0].Target1,
+                    Action1 = commands[0].Action1,
+                    Argument1 = commands[0].Argument1
+                };
+
+                if (commands.Count > 1)
+                {
+                    normalizedRow.Target2 = commands[1].Target1;
+                    normalizedRow.Action2 = commands[1].Action1;
+                    normalizedRow.Argument2 = commands[1].Argument1;
+                }
+
+                normalizedRows.Add(normalizedRow);
+            }
+
+            _tableData = normalizedRows;
+
+            if (_tableData.Count == 0)
+            {
+                _tableData.Add(new CommandRow());
+            }
+
+            if (_selectedRowIndex >= _tableData.Count)
+            {
+                _selectedRowIndex = _tableData.Count - 1;
+            }
+
+            RefreshTableUI();
+        }
+
+        private static bool IsCompleteCommand(string target, string action)
+        {
+            return !string.IsNullOrWhiteSpace(target) &&
+                   !string.IsNullOrWhiteSpace(action);
         }
 
         private void StyleButton(TextButton button, IBrush background, int height = 35)
@@ -112,7 +288,7 @@ namespace DroneSimulator
                 PressedBackground = null,
                 TextColor = Color.White
             };
-            runButton.TouchDown += (s, a) => RunRequested?.Invoke(GetCommandRows());
+            runButton.TouchDown += (s, a) => RunRequested?.Invoke(PrepareCommandRowsForRun());
             menuPanel.Widgets.Add(runButton);
 
             string[] menuItemsAfterRun = { "Шаг", "До отметки", "На начало", "Помощь", "Настройки" };
@@ -122,98 +298,17 @@ namespace DroneSimulator
             return menuPanel;
         }
 
-        private void StyleSquareButton(TextButton button, IBrush background, int size = 36)
+        private Widget CreateChargeInfoPanel()
         {
-            button.Background = background;
-            button.OverBackground = background;
-            button.PressedBackground = background;
-            button.FocusedBackground = background;
-
-            button.TextColor = Color.White;
-            button.Width = size;
-            button.Height = size;
-            button.Padding = new Myra.Graphics2D.Thickness(0); // Обнуляем внутренние поля для центрирования стрелок
-        }
-
-        private Widget CreateJoystick(MapRenderer mapRenderer, int droneIndex, string title, Color textColor)
-        {
-            // Главный контейнер для одного джойстика
-            var container = new VerticalStackPanel { Spacing = 5 };
-            container.Widgets.Add(new Label { Text = title, TextColor = Color.Black, HorizontalAlignment = HorizontalAlignment.Center });
-
-            // Сетка 3х3 для стрелок
-            var dpadGrid = new Grid { RowSpacing = 3, ColumnSpacing = 3 };
-            dpadGrid.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
-            dpadGrid.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
-            dpadGrid.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
-
-            // Стрелка ВВЕРХ
-            var btnUp = new TextButton { Text = "▲", GridColumn = 1, GridRow = 0 };
-            StyleSquareButton(btnUp, _btnDark);
-            btnUp.TouchDown += (s, a) => {
-                if (mapRenderer.Drones.Count > droneIndex)
-                {
-                    var drone = mapRenderer.Drones[droneIndex];
-                    if (drone.GridPosition.Y - 1 >= 0)
-                        drone.MoveTo(drone.GridPosition + new Vector2(0, -1));
-                }
-            };
-
-            // Стрелка ВЛЕВО
-            var btnLeft = new TextButton { Text = "◀", GridColumn = 0, GridRow = 1 };
-            StyleSquareButton(btnLeft, _btnDark);
-            btnLeft.TouchDown += (s, a) => {
-                if (mapRenderer.Drones.Count > droneIndex)
-                {
-                    var drone = mapRenderer.Drones[droneIndex];
-                    if (drone.GridPosition.X - 1 >= 0)
-                        drone.MoveTo(drone.GridPosition + new Vector2(-1, 0));
-                }
-            };
-
-            // Центральный индикатор дрона (К или З)
-            var centerLabel = new Label
+            _chargeInfoPanel = new VerticalStackPanel
             {
-                Text = droneIndex == 0 ? " К " : " З ",
-                GridColumn = 1,
-                GridRow = 1,
-                TextColor = textColor,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
+                Spacing = 2,
+                Margin = new Myra.Graphics2D.Thickness(0, 10, 0, 0),
+                Padding = new Myra.Graphics2D.Thickness(10, 8),
+                Background = new SolidBrush(new Color(235, 248, 235))
             };
 
-            // Стрелка ВПРАВО
-            var btnRight = new TextButton { Text = "▶", GridColumn = 2, GridRow = 1 };
-            StyleSquareButton(btnRight, _btnDark);
-            btnRight.TouchDown += (s, a) => {
-                if (mapRenderer.Drones.Count > droneIndex)
-                {
-                    var drone = mapRenderer.Drones[droneIndex];
-                    if (drone.GridPosition.X + 1 < mapRenderer.GridWidth)
-                        drone.MoveTo(drone.GridPosition + new Vector2(1, 0));
-                }
-            };
-
-            // Стрелка ВНИЗ
-            var btnDown = new TextButton { Text = "▼", GridColumn = 1, GridRow = 2 };
-            StyleSquareButton(btnDown, _btnDark);
-            btnDown.TouchDown += (s, a) => {
-                if (mapRenderer.Drones.Count > droneIndex)
-                {
-                    var drone = mapRenderer.Drones[droneIndex];
-                    if (drone.GridPosition.Y + 1 < mapRenderer.GridHeight)
-                        drone.MoveTo(drone.GridPosition + new Vector2(0, 1));
-                }
-            };
-
-            dpadGrid.Widgets.Add(btnUp);
-            dpadGrid.Widgets.Add(btnLeft);
-            dpadGrid.Widgets.Add(centerLabel);
-            dpadGrid.Widgets.Add(btnRight);
-            dpadGrid.Widgets.Add(btnDown);
-
-            container.Widgets.Add(dpadGrid);
-            return container;
+            return _chargeInfoPanel;
         }
 
         private Widget CreateMainContent(MapRenderer mapRenderer)
@@ -222,13 +317,10 @@ namespace DroneSimulator
 
             // ЛЕВАЯ ПАНЕЛЬ
             var leftPanel = new VerticalStackPanel { Padding = new Myra.Graphics2D.Thickness(10) };
-            var mapControls = new HorizontalStackPanel { Spacing = 20, Margin = new Myra.Graphics2D.Thickness(0, 0, 0, 10) };
-            leftPanel.Widgets.Add(mapControls);
 
             var mapImage = new Image { Renderable = new Myra.Graphics2D.TextureAtlases.TextureRegion(mapRenderer.MapTexture) };
             leftPanel.Widgets.Add(mapImage);
-
-            leftPanel.Widgets.Add(CreateDebugMovementPanel(mapRenderer));
+            leftPanel.Widgets.Add(CreateChargeInfoPanel());
 
             mainSplit.Widgets.Add(leftPanel);
 
@@ -241,23 +333,6 @@ namespace DroneSimulator
             mainSplit.Widgets.Add(rightPanel);
 
             return mainSplit;
-        }
-
-        private Widget CreateDebugMovementPanel(MapRenderer mapRenderer)
-        {
-            // Горизонтальный контейнер для двух крестовин
-            var panel = new HorizontalStackPanel { Spacing = 40, Margin = new Myra.Graphics2D.Thickness(0, 10, 0, 0) };
-
-            // Джойстик для Красного Дрона (Индекс 0)
-            var redJoystick = CreateJoystick(mapRenderer, 0, "Красный дрон", Color.Red);
-
-            // Джойстик для Зеленого Дрона (Индекс 1)
-            var greenJoystick = CreateJoystick(mapRenderer, 1, "Зелёный дрон", new Color(0, 128, 0));
-
-            panel.Widgets.Add(redJoystick);
-            panel.Widgets.Add(greenJoystick);
-
-            return panel;
         }
 
         private Widget CreateTableToolbar()
@@ -616,8 +691,6 @@ namespace DroneSimulator
         {
             var controlsLayout = new HorizontalStackPanel { Spacing = 20 };
 
-            var infoText = "Дрон 1 (Красный):\n• Направление: Вправо\n• Остановлен\n\nДрон 2 (Зелёный):\n• Остановлен";
-            controlsLayout.Widgets.Add(new Label { Text = infoText, TextColor = Color.Black });
 
             // Блок АДРЕСАТЫ
             var addresseePanel = new VerticalStackPanel { Spacing = 5 };
@@ -627,11 +700,11 @@ namespace DroneSimulator
             StyleButton(btnTargetAll, _btnDark); // Применяем темный скругленный стиль
             btnTargetAll.TouchDown += (s, a) => InsertTarget("Все");
 
-            var btnTargetRed = new TextButton { Text = "Красный дрон", HorizontalAlignment = HorizontalAlignment.Stretch };
+            var btnTargetRed = new TextButton { Text = "Красный", HorizontalAlignment = HorizontalAlignment.Stretch };
             StyleButton(btnTargetRed, _btnDark);
             btnTargetRed.TouchDown += (s, a) => InsertTarget("Красный");
 
-            var btnTargetGreen = new TextButton { Text = "Зелёный дрон", HorizontalAlignment = HorizontalAlignment.Stretch };
+            var btnTargetGreen = new TextButton { Text = "Зелёный", HorizontalAlignment = HorizontalAlignment.Stretch };
             StyleButton(btnTargetGreen, _btnDark);
             btnTargetGreen.TouchDown += (s, a) => InsertTarget("Зелёный");
 

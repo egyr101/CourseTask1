@@ -78,7 +78,15 @@ namespace DroneSimulator
             _commandExecutor = new DroneCommandExecutor(_mapRenderer);
 
             _uiManager = new UIManager(_mapRenderer);
-            _uiManager.RunRequested += rows => _commandExecutor.Start(rows);
+            _commandExecutor.ErrorOccurred += error => _uiManager.ShowError(error);
+            _commandExecutor.Completed += result => _uiManager.ShowAlgorithmResult(result);
+            _commandExecutor.ChargesChanged += charges => _uiManager.UpdateDroneCharges(charges);
+            _uiManager.UpdateDroneCharges(_commandExecutor.GetChargeInfo());
+            _uiManager.RunRequested += rows =>
+            {
+                _uiManager.HideMessage();
+                _commandExecutor.Start(rows);
+            };
         }
 
         protected override void Update(GameTime gameTime)

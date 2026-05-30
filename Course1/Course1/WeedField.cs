@@ -13,7 +13,11 @@ namespace DroneSimulator
 
         public bool HasAliveWeeds => _weeds.Any(weed => !weed.IsDestroyed);
 
+        public int TotalCount => _weeds.Count;
+
         public int AliveCount => _weeds.Count(weed => !weed.IsDestroyed);
+
+        public int DestroyedCount => _weeds.Count(weed => weed.IsDestroyed);
 
         public void Clear()
         {
@@ -38,6 +42,24 @@ namespace DroneSimulator
 
             weed.Destroy();
             return true;
+        }
+
+
+        public List<WeedSnapshot> CreateSnapshot()
+        {
+            return _weeds
+                .Select(weed => new WeedSnapshot(weed.GridPosition, weed.IsDestroyed))
+                .ToList();
+        }
+
+        public void RestoreSnapshot(IEnumerable<WeedSnapshot> snapshot)
+        {
+            _weeds.Clear();
+
+            foreach (var item in snapshot)
+            {
+                _weeds.Add(new Weed(item.GridPosition, item.IsDestroyed));
+            }
         }
 
         public void GenerateRandom(
@@ -71,6 +93,18 @@ namespace DroneSimulator
                 Add(availablePositions[index]);
                 availablePositions.RemoveAt(index);
             }
+        }
+    }
+
+    public readonly struct WeedSnapshot
+    {
+        public Vector2 GridPosition { get; }
+        public bool IsDestroyed { get; }
+
+        public WeedSnapshot(Vector2 gridPosition, bool isDestroyed)
+        {
+            GridPosition = gridPosition;
+            IsDestroyed = isDestroyed;
         }
     }
 }

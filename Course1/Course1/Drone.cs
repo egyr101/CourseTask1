@@ -33,6 +33,12 @@ namespace DroneSimulator
             GridPosition = newGridPosition;
         }
 
+        public void SetPositionInstant(Vector2 newGridPosition)
+        {
+            GridPosition = newGridPosition;
+            VisualPosition = newGridPosition;
+        }
+
         public void RotateTo(float targetRotation)
         {
             _targetRotation = MathHelper.WrapAngle(targetRotation);
