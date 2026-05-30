@@ -7,6 +7,25 @@ using System.Linq;
 
 namespace DroneSimulator
 {
+    public class ParsedInstruction
+    {
+        public int RowIndex { get; set; }     // Номер строки таблицы (для отладки)
+        public string Target { get; set; }    // Исполнитель ("Все", "Красный", "Зелёный")
+        public string Action { get; set; }    // Команда ("Вперёд", "Налево" и т.д.)
+        public int Argument { get; set; }     // Числовой аргумент (например, количество шагов)
+    };
+
+
+    public class Instruction
+    {
+        public string Target { get; set; }   // Кому (Красный, Зелёный, Все)
+        public string Action { get; set; }   // Что делать (Вперёд, Налево и т.д.)
+        public int Argument { get; set; }    // Сколько раз/шагов (из ячейки "Аргумент")
+}
+
+// Метод считывает всю таблицу и превращает её в плоский список последовательных команд
+
+
     // Класс, описывающий одну строку в нашей таблице
     public class CommandRow
     {
@@ -21,12 +40,158 @@ namespace DroneSimulator
     public class UIManager
     {
         private Desktop _desktop;
+        private Label _statusLabel; // Ссылка на текстовый блок статуса
         private Grid _tableGrid;
         private ScrollViewer _tableScroll;
         private int _selectedRowIndex = 0; // По умолчанию выделена первая строка (индекс 0)
         private SolidBrush _selectedRowBrush = new SolidBrush(new Color(200, 235, 200)); // Мягкий зелёный цвет выделения
         // Наша "База данных" таблицы
         private List<CommandRow> _tableData = new List<CommandRow>();
+
+        public List<Instruction> ReadInstructions()
+        {
+            var instructions = new List<Instruction>();
+
+            foreach (var row in _tableData)
+            {
+                // 1. Проверяем первую команду в строке
+                if (!string.IsNullOrEmpty(row.Target1) && !string.IsNullOrEmpty(row.Action1))
+                {
+                    // Пытаемся преобразовать аргумент в число. Если пусто или не число - будет 0
+                    int.TryParse(row.Argument1, out int arg);
+
+                    instructions.Add(new Instruction
+                    {
+                        Target = row.Target1,
+                        Action = row.Action1,
+                        Argument = arg
+                    });
+                }
+
+                // 2. Проверяем вторую команду в строке
+                if (!string.IsNullOrEmpty(row.Target2) && !string.IsNullOrEmpty(row.Action2))
+                {
+                    int.TryParse(row.Argument2, out int arg);
+
+                    instructions.Add(new Instruction
+                    {
+                        Target = row.Target2,
+                        Action = row.Action2,
+                        Argument = arg
+                    });
+                }
+            }
+
+            return instructions;
+        }
+
+        private void UpdateStatusWithCommands()
+        {
+            if (_statusLabel == null) return;
+
+            var instructions = ReadInstructions();
+
+            if (instructions.Count == 0)
+            {
+                _statusLabel.Text = "Список команд пуст.\nИспользуйте кнопки снизу для планирования.";
+                return;
+            }
+
+            string logText = "План выполнения команд:\n\n";
+            for (int i = 0; i < instructions.Count; i++)
+            {
+                var inst = instructions[i];
+
+                // Красивое форматирование аргумента, если он введен
+                string argText = inst.Argument > 0 ? $" (шагов: {inst.Argument})" : "";
+
+                logText += $"{i + 1}. [{inst.Target}] -> {inst.Action}{argText}\n";
+            }
+
+            _statusLabel.Text = logText;
+        }
+
+        public void UpdateStatusWithCommands(Label statusLabel)
+        {
+            var instructions = ReadInstructions();
+
+            if (instructions.Count == 0)
+            {
+                statusLabel.Text = "Список команд пуст.\nИспользуйте джойстик или кнопки для планирования.";
+                return;
+            }
+
+            string logText = "План выполнения команд:\n";
+            for (int i = 0; i < instructions.Count; i++)
+            {
+                var inst = instructions[i];
+                logText += $"{i + 1}. [{inst.Target}] -> выполнит '{inst.Action}' (аргумент: {inst.Argument})\n";
+            }
+
+            statusLabel.Text = logText;
+        }
+
+
+
+        public void DebugPrintExtractedCommands()
+        {
+            List<ParsedInstruction> commands = ExtractCommandsFromTable();
+
+            System.Diagnostics.Debug.WriteLine($"=== Вычленено команд: {commands.Count} ===");
+
+            foreach (var cmd in commands)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[Строка {cmd.RowIndex}] Получатель: {cmd.Target} | " +
+                    $"Действие: {cmd.Action} | " +
+                    $"Аргумент: {cmd.Argument}"
+                );
+            }
+
+            System.Diagnostics.Debug.WriteLine("=====================================");
+        }
+
+        public List<ParsedInstruction> ExtractCommandsFromTable()
+        {
+            var instructions = new List<ParsedInstruction>();
+
+            for (int i = 0; i < _tableData.Count; i++)
+            {
+                var row = _tableData[i];
+                int tableRowNumber = i + 1; // Номер строки для пользователя (начинается с 1)
+
+                // 1. Проверяем левую команду (Адресат 1 + Действие 1)
+                if (!string.IsNullOrEmpty(row.Target1) && !string.IsNullOrEmpty(row.Action1))
+                {
+                    // Безопасно парсим аргумент. Если там пусто или не число — запишется 0
+                    int.TryParse(row.Argument1, out int argVal);
+
+                    instructions.Add(new ParsedInstruction
+                    {
+                        RowIndex = tableRowNumber,
+                        Target = row.Target1,
+                        Action = row.Action1,
+                        Argument = argVal
+                    });
+                }
+
+                // 2. Проверяем правую команду (Адресат 2 + Действие 2)
+                if (!string.IsNullOrEmpty(row.Target2) && !string.IsNullOrEmpty(row.Action2))
+                {
+                    int.TryParse(row.Argument2, out int argVal);
+
+                    instructions.Add(new ParsedInstruction
+                    {
+                        RowIndex = tableRowNumber,
+                        Target = row.Target2,
+                        Action = row.Action2,
+                        Argument = argVal
+                    });
+                }
+            }
+
+            return instructions;
+        }
 
         // Цветовая палитра
         private IBrush _bgGreen;
@@ -81,106 +246,51 @@ namespace DroneSimulator
 
         private Widget CreateTopMenu()
         {
-            var menuPanel = new HorizontalStackPanel { Background = _headerGreen, Spacing = 15, Padding = new Myra.Graphics2D.Thickness(10, 5) };
-            string[] menuItems = { "Дроны", "Файл", "Выполнить", "Шаг", "До отметки", "На начало", "Помощь", "Настройки" };
-            foreach (var item in menuItems)
-                menuPanel.Widgets.Add(new Label { Text = item, TextColor = Color.White });
-            return menuPanel;
-        }
-
-        private void StyleSquareButton(TextButton button, IBrush background, int size = 36)
-        {
-            button.Background = background;
-            button.OverBackground = background;
-            button.PressedBackground = background;
-            button.FocusedBackground = background;
-
-            button.TextColor = Color.White;
-            button.Width = size;
-            button.Height = size;
-            button.Padding = new Myra.Graphics2D.Thickness(0); // Обнуляем внутренние поля для центрирования стрелок
-        }
-
-        private Widget CreateJoystick(MapRenderer mapRenderer, int droneIndex, string title, Color textColor)
-        {
-            // Главный контейнер для одного джойстика
-            var container = new VerticalStackPanel { Spacing = 5 };
-            container.Widgets.Add(new Label { Text = title, TextColor = Color.Black, HorizontalAlignment = HorizontalAlignment.Center });
-
-            // Сетка 3х3 для стрелок
-            var dpadGrid = new Grid { RowSpacing = 3, ColumnSpacing = 3 };
-            dpadGrid.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
-            dpadGrid.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
-            dpadGrid.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
-
-            // Стрелка ВВЕРХ
-            var btnUp = new TextButton { Text = "▲", GridColumn = 1, GridRow = 0 };
-            StyleSquareButton(btnUp, _btnDark);
-            btnUp.TouchDown += (s, a) => {
-                if (mapRenderer.Drones.Count > droneIndex)
-                {
-                    var drone = mapRenderer.Drones[droneIndex];
-                    if (drone.GridPosition.Y - 1 >= 0)
-                        drone.GridPosition += new Vector2(0, -1);
-                }
-            };
-
-            // Стрелка ВЛЕВО
-            var btnLeft = new TextButton { Text = "◀", GridColumn = 0, GridRow = 1 };
-            StyleSquareButton(btnLeft, _btnDark);
-            btnLeft.TouchDown += (s, a) => {
-                if (mapRenderer.Drones.Count > droneIndex)
-                {
-                    var drone = mapRenderer.Drones[droneIndex];
-                    if (drone.GridPosition.X - 1 >= 0)
-                        drone.GridPosition += new Vector2(-1, 0);
-                }
-            };
-
-            // Центральный индикатор дрона (К или З)
-            var centerLabel = new Label
+            var menuPanel = new HorizontalStackPanel
             {
-                Text = droneIndex == 0 ? " К " : " З ",
-                GridColumn = 1,
-                GridRow = 1,
-                TextColor = textColor,
-                HorizontalAlignment = HorizontalAlignment.Center,
+                Background = _headerGreen,
+                Spacing = 15,
+                Padding = new Myra.Graphics2D.Thickness(10, 5),
                 VerticalAlignment = VerticalAlignment.Center
             };
 
-            // Стрелка ВПРАВО
-            var btnRight = new TextButton { Text = "▶", GridColumn = 2, GridRow = 1 };
-            StyleSquareButton(btnRight, _btnDark);
-            btnRight.TouchDown += (s, a) => {
-                if (mapRenderer.Drones.Count > droneIndex)
+            string[] menuItems = { "Дрон и тракторы", "Файл", "Выполнить", "Шаг", "До отметки", "На начало", "Помощь", "Настройки" };
+
+            foreach (var item in menuItems)
+            {
+                if (item == "Выполнить")
                 {
-                    var drone = mapRenderer.Drones[droneIndex];
-                    if (drone.GridPosition.X + 1 < mapRenderer.GridWidth)
-                        drone.GridPosition += new Vector2(1, 0);
-                }
-            };
+                    // Создаем кнопку "Выполнить", которая выглядит как плоский текст
+                    var btnExecute = new TextButton
+                    {
+                        Text = item,
+                        Background = null, // Прозрачный фон в обычном состоянии
+                        OverBackground = new SolidBrush(new Color(40, 165, 95)),   // Зеленая подсветка при наведении
+                        PressedBackground = new SolidBrush(new Color(20, 125, 70)), // Темно-зеленый при нажатии
+                        TextColor = Color.White,
+                        Padding = new Myra.Graphics2D.Thickness(8, 4),
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
 
-            // Стрелка ВНИЗ
-            var btnDown = new TextButton { Text = "▼", GridColumn = 1, GridRow = 2 };
-            StyleSquareButton(btnDown, _btnDark);
-            btnDown.TouchDown += (s, a) => {
-                if (mapRenderer.Drones.Count > droneIndex)
+                    // ВЕШАЕМ НАШ ПАРСЕР ТАБЛИЦЫ НА КЛИК КНОПКИ!
+                    btnExecute.TouchDown += (s, a) => DebugPrintExtractedCommands();
+
+                    menuPanel.Widgets.Add(btnExecute);
+                }
+                else
                 {
-                    var drone = mapRenderer.Drones[droneIndex];
-                    if (drone.GridPosition.Y + 1 < mapRenderer.GridHeight)
-                        drone.GridPosition += new Vector2(0, 1);
+                    // Все остальные пункты меню пока оставляем простыми надписями
+                    menuPanel.Widgets.Add(new Label
+                    {
+                        Text = item,
+                        TextColor = Color.White,
+                        VerticalAlignment = VerticalAlignment.Center
+                    });
                 }
-            };
-
-            dpadGrid.Widgets.Add(btnUp);
-            dpadGrid.Widgets.Add(btnLeft);
-            dpadGrid.Widgets.Add(centerLabel);
-            dpadGrid.Widgets.Add(btnRight);
-            dpadGrid.Widgets.Add(btnDown);
-
-            container.Widgets.Add(dpadGrid);
-            return container;
+            }
+            return menuPanel;
         }
+
 
         private Widget CreateMainContent(MapRenderer mapRenderer)
         {
@@ -194,8 +304,6 @@ namespace DroneSimulator
             var mapImage = new Image { Renderable = new Myra.Graphics2D.TextureAtlases.TextureRegion(mapRenderer.MapTexture) };
             leftPanel.Widgets.Add(mapImage);
 
-            leftPanel.Widgets.Add(CreateDebugMovementPanel(mapRenderer));
-
             mainSplit.Widgets.Add(leftPanel);
 
             // ПРАВАЯ ПАНЕЛЬ
@@ -207,23 +315,6 @@ namespace DroneSimulator
             mainSplit.Widgets.Add(rightPanel);
 
             return mainSplit;
-        }
-
-        private Widget CreateDebugMovementPanel(MapRenderer mapRenderer)
-        {
-            // Горизонтальный контейнер для двух крестовин
-            var panel = new HorizontalStackPanel { Spacing = 40, Margin = new Myra.Graphics2D.Thickness(0, 10, 0, 0) };
-
-            // Джойстик для Красного Дрона (Индекс 0)
-            var redJoystick = CreateJoystick(mapRenderer, 0, "Красный дрон", Color.Red);
-
-            // Джойстик для Зеленого Дрона (Индекс 1)
-            var greenJoystick = CreateJoystick(mapRenderer, 1, "Зелёный дрон", new Color(0, 128, 0));
-
-            panel.Widgets.Add(redJoystick);
-            panel.Widgets.Add(greenJoystick);
-
-            return panel;
         }
 
         private Widget CreateTableToolbar()
@@ -330,7 +421,8 @@ namespace DroneSimulator
                 onTextChanged(cleanText);
             };
 
-            textBox.TouchDown += (s, a) => {
+            textBox.TouchDown += (s, a) =>
+            {
                 _selectedRowIndex = rowIndex;
                 UpdateSelectionVisuals(); // Быстрое обновление цветов (фокус ввода НЕ теряется!)
             };
@@ -374,6 +466,7 @@ namespace DroneSimulator
         // Этот метод полностью перерисовывает таблицу на основе списка _tableData
         private void RefreshTableUI()
         {
+            UpdateStatusWithCommands();
             _tableGrid.Widgets.Clear();
             _tableGrid.RowsProportions.Clear();
 
@@ -404,7 +497,8 @@ namespace DroneSimulator
                 var numPanel = new Panel { GridColumn = 0, GridRow = rowNum, Background = numBg };
                 numPanel.Widgets.Add(numLabel);
                 int localIndex = i; // Локальная копия индекса для замыкания
-                numPanel.TouchDown += (s, a) => {
+                numPanel.TouchDown += (s, a) =>
+                {
                     _selectedRowIndex = localIndex;
                     UpdateSelectionVisuals(); // Замени здесь RefreshTableUI() на UpdateSelectionVisuals()
                 };
@@ -427,7 +521,8 @@ namespace DroneSimulator
             var panel = new Panel { GridColumn = col, GridRow = row, Background = backgroundBrush };
             panel.Widgets.Add(new Label { Text = text, Margin = new Myra.Graphics2D.Thickness(5), TextColor = Color.Black });
 
-            panel.TouchDown += (s, a) => {
+            panel.TouchDown += (s, a) =>
+            {
                 _selectedRowIndex = rowIndex;
                 UpdateSelectionVisuals(); // Быстрое обновление цветов
             };
@@ -582,8 +677,14 @@ namespace DroneSimulator
         {
             var controlsLayout = new HorizontalStackPanel { Spacing = 20 };
 
-            var infoText = "Дрон 1 (Красный):\n• Направление: Вправо\n• Остановлен\n\nДрон 2 (Зелёный):\n• Остановлен";
-            controlsLayout.Widgets.Add(new Label { Text = infoText, TextColor = Color.Black });
+            _statusLabel = new Label
+            {
+                Text = "Список команд пуст.\nИспользуйте кнопки снизу для планирования.",
+                TextColor = Color.Black,
+                Width = 250,  // Ограничиваем ширину, чтобы текст красиво переносился
+                Wrap = true   // Включаем автоматический перенос длинных строк
+            };
+            controlsLayout.Widgets.Add(_statusLabel);
 
             // Блок АДРЕСАТЫ
             var addresseePanel = new VerticalStackPanel { Spacing = 5 };
