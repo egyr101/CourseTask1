@@ -116,6 +116,14 @@ namespace DroneSimulator
             _activeTickQueues.Clear();
         }
 
+        public void RestoreMapToInitialState()
+        {
+            RestoreInitialSnapshot();
+            IsCompleted = false;
+            LastMessage = null;
+            LastError = null;
+        }
+
         public IReadOnlyList<DroneChargeInfo> GetChargeInfo()
         {
             return _drones

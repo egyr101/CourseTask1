@@ -22,6 +22,8 @@ namespace DroneSimulator
     public class UIManager
     {
         public event Action<IReadOnlyList<CommandRow>>? RunRequested;
+        public event Action? AlgorithmResultClosed;
+
         private Desktop _desktop;
         private Grid _tableGrid;
         private ScrollViewer _tableScroll;
@@ -33,6 +35,9 @@ namespace DroneSimulator
         private Panel _messagePanel;
         private Label _messageTitleLabel;
         private Label _messageTextLabel;
+        private bool _shouldRollbackMapWhenMessageClosed;
+
+        private Panel _testAlgorithmsPanel;
 
         private VerticalStackPanel _chargeInfoPanel;
         private readonly List<Label> _chargeInfoLabels = new List<Label>();
@@ -67,6 +72,9 @@ namespace DroneSimulator
 
             rootContainer.Widgets.Add(CreateTopMenu());
 
+            _testAlgorithmsPanel = CreateTestAlgorithmsPanel();
+            rootContainer.Widgets.Add(_testAlgorithmsPanel);
+
             _messagePanel = CreateMessagePanel();
             rootContainer.Widgets.Add(_messagePanel);
 
@@ -94,14 +102,27 @@ namespace DroneSimulator
                 Margin = new Myra.Graphics2D.Thickness(8, 4)
             };
 
-            var closeButton = new TextButton
+            // Используем Grid + Label вместо TextButton.
+            // В некоторых версиях Myra текст TextButton внутри небольшого информационного окна
+            // может не отрисовываться корректно, хотя сама серая кнопка видна.
+            // Отдельный Label внутри панели гарантированно показывает надпись.
+            var closeButton = new Grid
+            {
+                Width = 140,
+                Height = 44,
+                Margin = new Myra.Graphics2D.Thickness(8, 4),
+                Background = _btnDark
+            };
+
+            closeButton.Widgets.Add(new Label
             {
                 Text = "Закрыть",
-                Width = 110,
-                Margin = new Myra.Graphics2D.Thickness(8, 4)
-            };
-            StyleButton(closeButton, _btnDark, 32);
-            closeButton.TouchDown += (s, a) => HideMessage();
+                TextColor = Color.White,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+
+            closeButton.TouchDown += (s, a) => CloseMessage();
 
             var content = new VerticalStackPanel
             {
@@ -117,7 +138,7 @@ namespace DroneSimulator
             {
                 Background = new SolidBrush(new Color(170, 55, 45)),
                 Margin = new Myra.Graphics2D.Thickness(10, 8),
-                Height = 120,
+                Height = 155,
                 Visible = false
             };
 
@@ -127,6 +148,7 @@ namespace DroneSimulator
 
         public void ShowError(string message)
         {
+            _shouldRollbackMapWhenMessageClosed = false;
             _messagePanel.Background = new SolidBrush(new Color(170, 55, 45));
             _messageTitleLabel.Text = "Ошибка выполнения алгоритма";
             _messageTextLabel.Text = message + " Карта возвращена в начальное состояние.";
@@ -135,6 +157,7 @@ namespace DroneSimulator
 
         public void ShowAlgorithmResult(AlgorithmResult result)
         {
+            _shouldRollbackMapWhenMessageClosed = true;
             _messagePanel.Background = new SolidBrush(new Color(45, 145, 80));
             _messageTitleLabel.Text = "Алгоритм выполнен успешно";
             _messageTextLabel.Text =
@@ -145,7 +168,20 @@ namespace DroneSimulator
 
         public void HideMessage()
         {
+            _shouldRollbackMapWhenMessageClosed = false;
             _messagePanel.Visible = false;
+        }
+
+        private void CloseMessage()
+        {
+            bool shouldRollback = _shouldRollbackMapWhenMessageClosed;
+
+            HideMessage();
+
+            if (shouldRollback)
+            {
+                AlgorithmResultClosed?.Invoke();
+            }
         }
 
         public void UpdateDroneCharges(IReadOnlyList<DroneChargeInfo> chargeInfos)
@@ -187,6 +223,7 @@ namespace DroneSimulator
 
         private IReadOnlyList<CommandRow> PrepareCommandRowsForRun()
         {
+            CloseMessage();
             RemoveIncompleteCommandsFromTable();
             return GetCommandRows();
         }
@@ -274,11 +311,28 @@ namespace DroneSimulator
 
         private Widget CreateTopMenu()
         {
-            var menuPanel = new HorizontalStackPanel { Background = _headerGreen, Spacing = 15, Padding = new Myra.Graphics2D.Thickness(10, 5) };
+            var menuPanel = new HorizontalStackPanel
+            {
+                Background = _headerGreen,
+                Spacing = 15,
+                Padding = new Myra.Graphics2D.Thickness(10, 5)
+            };
 
-            string[] menuItemsBeforeRun = { "Дроны", "Файл" };
-            foreach (var item in menuItemsBeforeRun)
-                menuPanel.Widgets.Add(new Label { Text = item, TextColor = Color.White });
+            menuPanel.Widgets.Add(new Label { Text = "Дроны", TextColor = Color.White });
+
+            var loadTestsButton = new TextButton
+            {
+                Text = "Загрузить тестовые алгоритмы",
+                Background = null,
+                OverBackground = null,
+                PressedBackground = null,
+                TextColor = Color.White
+            };
+            loadTestsButton.TouchDown += (s, a) =>
+            {
+                _testAlgorithmsPanel.Visible = !_testAlgorithmsPanel.Visible;
+            };
+            menuPanel.Widgets.Add(loadTestsButton);
 
             var runButton = new TextButton
             {
@@ -296,6 +350,130 @@ namespace DroneSimulator
                 menuPanel.Widgets.Add(new Label { Text = item, TextColor = Color.White });
 
             return menuPanel;
+        }
+
+        private Panel CreateTestAlgorithmsPanel()
+        {
+            var panel = new Panel
+            {
+                Background = new SolidBrush(new Color(210, 235, 220)),
+                Margin = new Myra.Graphics2D.Thickness(10, 6),
+                Visible = false
+            };
+
+            var content = new HorizontalStackPanel
+            {
+                Spacing = 8,
+                Padding = new Myra.Graphics2D.Thickness(8)
+            };
+
+            content.Widgets.Add(CreateTestAlgorithmButton(
+                "Успешный алгоритм",
+                CreateSuccessfulAlgorithmRows));
+
+            content.Widgets.Add(CreateTestAlgorithmButton(
+                "Столкновение дронов",
+                CreateCollisionAlgorithmRows));
+
+            content.Widgets.Add(CreateTestAlgorithmButton(
+                "Дрон врезается в границу карты",
+                CreateBoundaryCrashAlgorithmRows));
+
+            content.Widgets.Add(CreateTestAlgorithmButton(
+                "Уничтожены не все сорняки",
+                CreateIncompleteWeedAlgorithmRows));
+
+            panel.Widgets.Add(content);
+            return panel;
+        }
+
+        private TextButton CreateTestAlgorithmButton(
+            string text,
+            Func<List<CommandRow>> createRows)
+        {
+            var button = new TextButton
+            {
+                Text = text,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+
+            StyleButton(button, _btnDark, 34);
+            button.TouchDown += (s, a) =>
+            {
+                LoadTestAlgorithm(createRows());
+                _testAlgorithmsPanel.Visible = false;
+            };
+
+            return button;
+        }
+
+        private void LoadTestAlgorithm(List<CommandRow> rows)
+        {
+            CloseMessage();
+            _tableData = rows;
+            _selectedRowIndex = 0;
+            RefreshTableUI();
+        }
+
+        private static CommandRow Row(
+            string target1,
+            string action1,
+            string argument1 = "",
+            string target2 = "",
+            string action2 = "",
+            string argument2 = "")
+        {
+            return new CommandRow
+            {
+                Target1 = target1,
+                Action1 = action1,
+                Argument1 = argument1,
+                Target2 = target2,
+                Action2 = action2,
+                Argument2 = argument2
+            };
+        }
+
+        private static List<CommandRow> CreateSuccessfulAlgorithmRows()
+        {
+            return new List<CommandRow>
+            {
+                Row("Красный", "Разряд", "", "Зелёный", "Разряд"),
+                Row("Красный", "Вперёд", "", "Зелёный", "Вперёд"),
+                Row("Красный", "Разряд", "", "Зелёный", "Разряд"),
+                Row("Красный", "Вперёд"),
+                Row("Красный", "Налево"),
+                Row("Красный", "Разряд")
+            };
+        }
+
+        private static List<CommandRow> CreateCollisionAlgorithmRows()
+        {
+            return new List<CommandRow>
+            {
+                Row("Красный", "Вперёд", "3", "Зелёный", "Налево"),
+                Row("Зелёный", "Вперёд", "3"),
+                Row("Зелёный", "Налево"),
+                Row("Зелёный", "Вперёд", "5")
+            };
+        }
+
+        private static List<CommandRow> CreateBoundaryCrashAlgorithmRows()
+        {
+            return new List<CommandRow>
+            {
+                Row("Красный", "Налево"),
+                Row("Красный", "Вперёд", "6")
+            };
+        }
+
+        private static List<CommandRow> CreateIncompleteWeedAlgorithmRows()
+        {
+            return new List<CommandRow>
+            {
+                Row("Красный", "Разряд", "", "Зелёный", "Разряд"),
+                Row("Красный", "Вперёд", "", "Зелёный", "Вперёд")
+            };
         }
 
         private Widget CreateChargeInfoPanel()

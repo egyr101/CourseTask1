@@ -4,7 +4,6 @@ using Microsoft.Xna.Framework.Input;
 using Myra;
 using System;
 using System.IO;
-using System.Linq;
 
 namespace DroneSimulator
 {
@@ -33,17 +32,17 @@ namespace DroneSimulator
             return Texture2D.FromStream(GraphicsDevice, stream);
         }
 
-        private void GenerateWeeds()
+        private void CreateFixedWeeds()
         {
-            var random = new Random();
-            int weedCount = random.Next(4, 9);
+            _mapRenderer.WeedField.Clear();
 
-            _mapRenderer.WeedField.GenerateRandom(
-                weedCount,
-                _mapRenderer.GridWidth,
-                _mapRenderer.GridHeight,
-                _mapRenderer.Drones.Select(drone => drone.GridPosition),
-                random);
+            // Фиксированные позиции нужны для предсказуемых учебных тестов.
+            // Красный дрон уничтожает три сорняка, зелёный — два.
+            _mapRenderer.WeedField.Add(new Vector2(3, 5));
+            _mapRenderer.WeedField.Add(new Vector2(4, 5));
+            _mapRenderer.WeedField.Add(new Vector2(4, 4));
+            _mapRenderer.WeedField.Add(new Vector2(11, 8));
+            _mapRenderer.WeedField.Add(new Vector2(12, 8));
         }
 
         protected override void Initialize()
@@ -71,8 +70,8 @@ namespace DroneSimulator
             _mapRenderer.Drones.Add(redDrone);
             _mapRenderer.Drones.Add(greenDrone);
 
-            // Сорняки создаются случайно: количество и позиции не зашиты в MapRenderer или Executor.
-            GenerateWeeds();
+            // Сорняки фиксированы, чтобы тестовые алгоритмы всегда работали одинаково.
+            CreateFixedWeeds();
 
             // 2. Создаем UI
             _commandExecutor = new DroneCommandExecutor(_mapRenderer);
@@ -81,6 +80,7 @@ namespace DroneSimulator
             _commandExecutor.ErrorOccurred += error => _uiManager.ShowError(error);
             _commandExecutor.Completed += result => _uiManager.ShowAlgorithmResult(result);
             _commandExecutor.ChargesChanged += charges => _uiManager.UpdateDroneCharges(charges);
+            _uiManager.AlgorithmResultClosed += () => _commandExecutor.RestoreMapToInitialState();
             _uiManager.UpdateDroneCharges(_commandExecutor.GetChargeInfo());
             _uiManager.RunRequested += rows =>
             {
