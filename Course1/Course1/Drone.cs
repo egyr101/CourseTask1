@@ -11,13 +11,21 @@ namespace DroneSimulator
         public Color Color { get; set; }
         public Texture2D Texture { get; set; }
 
-        private readonly float _moveSpeed = 6f; // Скорость движения (ячеек в секунду)
+        // Длительность перемещения на одну клетку.
+        // Увеличь значение, чтобы дрон двигался медленнее; уменьши, чтобы двигался быстрее.
+        private const float MoveDurationSeconds = 0.3f;
+
         private readonly float _rotationSpeed = MathHelper.Pi * 3f; // Скорость поворота (радиан в секунду)
+
+        private Vector2 _moveStartPosition;
+        private Vector2 _moveTargetPosition;
+        private float _moveElapsedSeconds;
+        private bool _isMoving;
 
         private float _visualRotation;
         private float _targetRotation;
 
-        public bool IsMoving => Vector2.Distance(VisualPosition, GridPosition) > 0.001f;
+        public bool IsMoving => _isMoving;
         public bool IsRotating => Math.Abs(MathHelper.WrapAngle(_targetRotation - _visualRotation)) > 0.001f;
         public bool IsAnimating => IsMoving || IsRotating;
 
@@ -25,11 +33,18 @@ namespace DroneSimulator
         {
             GridPosition = startPosition;
             VisualPosition = startPosition; // Изначально стоим ровно в стартовой ячейке
+            _moveStartPosition = startPosition;
+            _moveTargetPosition = startPosition;
             Color = color;
         }
 
         public void MoveTo(Vector2 newGridPosition)
         {
+            _moveStartPosition = VisualPosition;
+            _moveTargetPosition = newGridPosition;
+            _moveElapsedSeconds = 0f;
+            _isMoving = true;
+
             GridPosition = newGridPosition;
         }
 
@@ -37,6 +52,11 @@ namespace DroneSimulator
         {
             GridPosition = newGridPosition;
             VisualPosition = newGridPosition;
+
+            _moveStartPosition = newGridPosition;
+            _moveTargetPosition = newGridPosition;
+            _moveElapsedSeconds = 0f;
+            _isMoving = false;
         }
 
         public void RotateTo(float targetRotation)
@@ -62,23 +82,24 @@ namespace DroneSimulator
 
         private void UpdateMovement(float dt)
         {
-            float distance = Vector2.Distance(VisualPosition, GridPosition);
+            if (!_isMoving)
+                return;
 
-            if (distance > 0.001f)
-            {
-                Vector2 direction = Vector2.Normalize(GridPosition - VisualPosition);
-                VisualPosition += direction * _moveSpeed * dt;
+            _moveElapsedSeconds += dt;
 
-                // Если проскочили цель из-за кадра (dt) - фиксируем в цели
-                if (Vector2.Distance(VisualPosition, GridPosition) > distance)
-                {
-                    VisualPosition = GridPosition;
-                }
-            }
-            else
+            float progress = _moveElapsedSeconds / MoveDurationSeconds;
+
+            if (progress >= 1f)
             {
-                VisualPosition = GridPosition;
+                VisualPosition = _moveTargetPosition;
+                _isMoving = false;
+                return;
             }
+
+            VisualPosition = Vector2.Lerp(
+                _moveStartPosition,
+                _moveTargetPosition,
+                progress);
         }
 
         private void UpdateRotation(float dt)
