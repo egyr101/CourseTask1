@@ -23,6 +23,13 @@ namespace DroneSimulator
 
         protected override void Initialize()
         {
+            _graphics.PreferredBackBufferWidth = 1280;
+            _graphics.PreferredBackBufferHeight = 720;
+            _graphics.ApplyChanges();
+
+            // РАЗРЕШАЕМ СВОБОДНО РАСТЯГИВАТЬ ОКНО ИГРЫ МЫШКОЙ:
+            Window.AllowUserResizing = true;
+
             base.Initialize();
         }
 
@@ -48,6 +55,20 @@ namespace DroneSimulator
 
             // 2. Создаем UI
             _uiManager = new UIManager(_mapRenderer);
+            _commandExecutor.ErrorOccurred += error => _uiManager.ShowError(error);
+            _commandExecutor.Completed += result => _uiManager.ShowAlgorithmResult(result);
+            _commandExecutor.ChargesChanged += charges => _uiManager.UpdateDroneCharges(charges);
+            _uiManager.UpdateDroneCharges(_commandExecutor.GetChargeInfo());
+            _uiManager.SettingsChanged += (newSettings) =>
+            {
+                // Здесь настраивается только скорость хода дронов
+                // Например: someRunner.Delay = (int)(newSettings.Speed * 1000);
+            };
+            _uiManager.RunRequested += rows =>
+            {
+                _uiManager.HideMessage();
+                _commandExecutor.Start(rows);
+            };
         }
 
         protected override void Update(GameTime gameTime)

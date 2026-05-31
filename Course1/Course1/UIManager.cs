@@ -1,9 +1,11 @@
-﻿using Microsoft.Xna.Framework;
+﻿using Course1;
+using Microsoft.Xna.Framework;
 using Myra.Graphics2D;
-using Myra.Graphics2D.UI;
 using Myra.Graphics2D.Brushes;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Text.Json;
 
 namespace DroneSimulator
 {
@@ -52,26 +54,34 @@ namespace DroneSimulator
         {
             var instructions = new List<Instruction>();
 
-            foreach (var row in _tableData)
-            {
-                // 1. Проверяем первую команду в строке
-                if (!string.IsNullOrEmpty(row.Target1) && !string.IsNullOrEmpty(row.Action1))
-                {
-                    // Пытаемся преобразовать аргумент в число. Если пусто или не число - будет 0
-                    int.TryParse(row.Argument1, out int arg);
+        private VerticalStackPanel _chargeInfoPanel;
+        private readonly List<Label> _chargeInfoLabels = new List<Label>();
 
-                    instructions.Add(new Instruction
-                    {
-                        Target = row.Target1,
-                        Action = row.Action1,
-                        Argument = arg
-                    });
-                }
+        // Цветовая палитра
+        private IBrush _bgGreen;
+        private IBrush _headerGreen;
+        private IBrush _btnGreen;
+        private IBrush _btnDark; // Скругленная темная кисть для кнопок команд
 
-                // 2. Проверяем вторую команду в строке
-                if (!string.IsNullOrEmpty(row.Target2) && !string.IsNullOrEmpty(row.Action2))
-                {
-                    int.TryParse(row.Argument2, out int arg);
+        // Добавь вспомогательный метод инициализации кистей (вызовем его в конструкторе):
+        private void InitBrushes()
+        {
+            var device = Myra.MyraEnvironment.Game.GraphicsDevice;
+
+            _bgGreen = new SolidBrush(new Color(225, 240, 225));
+            _headerGreen = new SolidBrush(new Color(30, 145, 80));
+
+            // Создаем скругленные зеленые кнопки (радиус 6 пикселей)
+            _btnGreen = CreateRoundedBrush(device, 6, new Color(60, 180, 120));
+
+            // Создаем скругленные темные кнопки (радиус 6 пикселей)
+            _btnDark = CreateRoundedBrush(device, 6, new Color(45, 45, 45));
+        }
+
+        public UIManager(MapRenderer mapRenderer)
+        {
+            InitBrushes();
+            _desktop = new Desktop();
 
                     instructions.Add(new Instruction
                     {
@@ -246,50 +256,39 @@ namespace DroneSimulator
 
         private Widget CreateTopMenu()
         {
-            var menuPanel = new HorizontalStackPanel
+            var menuPanel = new HorizontalStackPanel { Background = _headerGreen, Spacing = 15, Padding = new Myra.Graphics2D.Thickness(10, 5) };
+
+            string[] menuItemsBeforeRun = { "Дроны", "Файл" };
+            foreach (var item in menuItemsBeforeRun)
+                menuPanel.Widgets.Add(new Label { Text = item, TextColor = Color.White });
+
+            var runButton = new TextButton
             {
-                Background = _headerGreen,
-                Spacing = 15,
-                Padding = new Myra.Graphics2D.Thickness(10, 5),
-                VerticalAlignment = VerticalAlignment.Center
+                Text = "Выполнить",
+                Background = null,
+                OverBackground = null,
+                PressedBackground = null,
+                TextColor = Color.White
             };
+            runButton.TouchDown += (s, a) => RunRequested?.Invoke(PrepareCommandRowsForRun());
+            menuPanel.Widgets.Add(runButton);
 
-            string[] menuItems = { "Дрон и тракторы", "Файл", "Выполнить", "Шаг", "До отметки", "На начало", "Помощь", "Настройки" };
+            string[] menuItemsAfterRun = { "Шаг", "До отметки", "На начало", "Помощь", "Настройки" };
+            foreach (var item in menuItemsAfterRun)
+                menuPanel.Widgets.Add(new Label { Text = item, TextColor = Color.White });
 
-            foreach (var item in menuItems)
-            {
-                if (item == "Выполнить")
-                {
-                    // Создаем кнопку "Выполнить", которая выглядит как плоский текст
-                    var btnExecute = new TextButton
-                    {
-                        Text = item,
-                        Background = null, // Прозрачный фон в обычном состоянии
-                        OverBackground = new SolidBrush(new Color(40, 165, 95)),   // Зеленая подсветка при наведении
-                        PressedBackground = new SolidBrush(new Color(20, 125, 70)), // Темно-зеленый при нажатии
-                        TextColor = Color.White,
-                        Padding = new Myra.Graphics2D.Thickness(8, 4),
-                        VerticalAlignment = VerticalAlignment.Center
-                    };
-
-                    // ВЕШАЕМ НАШ ПАРСЕР ТАБЛИЦЫ НА КЛИК КНОПКИ!
-                    btnExecute.TouchDown += (s, a) => DebugPrintExtractedCommands();
-
-                    menuPanel.Widgets.Add(btnExecute);
-                }
-                else
-                {
-                    // Все остальные пункты меню пока оставляем простыми надписями
-                    menuPanel.Widgets.Add(new Label
-                    {
-                        Text = item,
-                        TextColor = Color.White,
-                        VerticalAlignment = VerticalAlignment.Center
-                    });
-                }
-            }
             return menuPanel;
         }
+
+        private Widget CreateChargeInfoPanel()
+        {
+            _chargeInfoPanel = new VerticalStackPanel
+            {
+                Spacing = 2,
+                Margin = new Myra.Graphics2D.Thickness(0, 10, 0, 0),
+                Padding = new Myra.Graphics2D.Thickness(10, 8),
+                Background = new SolidBrush(new Color(235, 248, 235))
+            };
 
 
         private Widget CreateMainContent(MapRenderer mapRenderer)

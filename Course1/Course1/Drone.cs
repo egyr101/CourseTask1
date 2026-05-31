@@ -1,4 +1,5 @@
-﻿using Microsoft.Xna.Framework;
+﻿using Course1;
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 
 namespace DroneSimulator
@@ -10,7 +11,8 @@ namespace DroneSimulator
         public Color Color { get; set; }
         public Texture2D Texture { get; set; }
 
-        private float _moveSpeed = 6f; // Скорость движения (ячеек в секунду)
+        private readonly float _moveSpeed = 6f ; // Скорость движения (ячеек в секунду)
+        private readonly float _rotationSpeed = MathHelper.Pi * 3f; // Скорость поворота (радиан в секунду)
 
         public Drone(Vector2 startPosition, Color color)
         {
