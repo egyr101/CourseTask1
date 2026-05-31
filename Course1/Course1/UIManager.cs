@@ -1,31 +1,18 @@
-﻿using Microsoft.Xna.Framework;
+using Course1;
+using Microsoft.Xna.Framework;
 using Myra.Graphics2D;
-using Myra.Graphics2D.UI;
 using Myra.Graphics2D.Brushes;
+using Myra.Graphics2D.UI;
+using Myra.Graphics2D.UI.File;
+using Myra.Graphics2D.UI.Styles;
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Text.Json;
 
 namespace DroneSimulator
 {
-    public class ParsedInstruction
-    {
-        public int RowIndex { get; set; }     // Номер строки таблицы (для отладки)
-        public string Target { get; set; }    // Исполнитель ("Все", "Красный", "Зелёный")
-        public string Action { get; set; }    // Команда ("Вперёд", "Налево" и т.д.)
-        public int Argument { get; set; }     // Числовой аргумент (например, количество шагов)
-    };
-
-
-    public class Instruction
-    {
-        public string Target { get; set; }   // Кому (Красный, Зелёный, Все)
-        public string Action { get; set; }   // Что делать (Вперёд, Налево и т.д.)
-        public int Argument { get; set; }    // Сколько раз/шагов (из ячейки "Аргумент")
-}
-
-// Метод считывает всю таблицу и превращает её в плоский список последовательных команд
-
-
     // Класс, описывающий одну строку в нашей таблице
     public class CommandRow
     {
@@ -39,8 +26,8 @@ namespace DroneSimulator
 
     public class UIManager
     {
+        public event Action<IReadOnlyList<CommandRow>>? RunRequested;
         private Desktop _desktop;
-        private Label _statusLabel; // Ссылка на текстовый блок статуса
         private Grid _tableGrid;
         private ScrollViewer _tableScroll;
         private int _selectedRowIndex = 0; // По умолчанию выделена первая строка (индекс 0)
@@ -48,150 +35,21 @@ namespace DroneSimulator
         // Наша "База данных" таблицы
         private List<CommandRow> _tableData = new List<CommandRow>();
 
-        public List<Instruction> ReadInstructions()
-        {
-            var instructions = new List<Instruction>();
+        private Panel _messagePanel;
+        private Label _messageTitleLabel;
+        private Label _messageTextLabel;
 
-            foreach (var row in _tableData)
-            {
-                // 1. Проверяем первую команду в строке
-                if (!string.IsNullOrEmpty(row.Target1) && !string.IsNullOrEmpty(row.Action1))
-                {
-                    // Пытаемся преобразовать аргумент в число. Если пусто или не число - будет 0
-                    int.TryParse(row.Argument1, out int arg);
+        private VerticalStackPanel _chargeInfoPanel;
+        private readonly List<Label> _chargeInfoLabels = new List<Label>();
 
-                    instructions.Add(new Instruction
-                    {
-                        Target = row.Target1,
-                        Action = row.Action1,
-                        Argument = arg
-                    });
-                }
+        public event Action? SaveAlgorithmRequested;
+        public event Action? LoadAlgorithmRequested;
+        public event Action<string>? LoadMapRequested; // Должно быть так
 
-                // 2. Проверяем вторую команду в строке
-                if (!string.IsNullOrEmpty(row.Target2) && !string.IsNullOrEmpty(row.Action2))
-                {
-                    int.TryParse(row.Argument2, out int arg);
+        public GameSettings CurrentSettings { get; private set; } = new GameSettings();
 
-                    instructions.Add(new Instruction
-                    {
-                        Target = row.Target2,
-                        Action = row.Action2,
-                        Argument = arg
-                    });
-                }
-            }
-
-            return instructions;
-        }
-
-        private void UpdateStatusWithCommands()
-        {
-            if (_statusLabel == null) return;
-
-            var instructions = ReadInstructions();
-
-            if (instructions.Count == 0)
-            {
-                _statusLabel.Text = "Список команд пуст.\nИспользуйте кнопки снизу для планирования.";
-                return;
-            }
-
-            string logText = "План выполнения команд:\n\n";
-            for (int i = 0; i < instructions.Count; i++)
-            {
-                var inst = instructions[i];
-
-                // Красивое форматирование аргумента, если он введен
-                string argText = inst.Argument > 0 ? $" (шагов: {inst.Argument})" : "";
-
-                logText += $"{i + 1}. [{inst.Target}] -> {inst.Action}{argText}\n";
-            }
-
-            _statusLabel.Text = logText;
-        }
-
-        public void UpdateStatusWithCommands(Label statusLabel)
-        {
-            var instructions = ReadInstructions();
-
-            if (instructions.Count == 0)
-            {
-                statusLabel.Text = "Список команд пуст.\nИспользуйте джойстик или кнопки для планирования.";
-                return;
-            }
-
-            string logText = "План выполнения команд:\n";
-            for (int i = 0; i < instructions.Count; i++)
-            {
-                var inst = instructions[i];
-                logText += $"{i + 1}. [{inst.Target}] -> выполнит '{inst.Action}' (аргумент: {inst.Argument})\n";
-            }
-
-            statusLabel.Text = logText;
-        }
-
-
-
-        public void DebugPrintExtractedCommands()
-        {
-            List<ParsedInstruction> commands = ExtractCommandsFromTable();
-
-            System.Diagnostics.Debug.WriteLine($"=== Вычленено команд: {commands.Count} ===");
-
-            foreach (var cmd in commands)
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[Строка {cmd.RowIndex}] Получатель: {cmd.Target} | " +
-                    $"Действие: {cmd.Action} | " +
-                    $"Аргумент: {cmd.Argument}"
-                );
-            }
-
-            System.Diagnostics.Debug.WriteLine("=====================================");
-        }
-
-        public List<ParsedInstruction> ExtractCommandsFromTable()
-        {
-            var instructions = new List<ParsedInstruction>();
-
-            for (int i = 0; i < _tableData.Count; i++)
-            {
-                var row = _tableData[i];
-                int tableRowNumber = i + 1; // Номер строки для пользователя (начинается с 1)
-
-                // 1. Проверяем левую команду (Адресат 1 + Действие 1)
-                if (!string.IsNullOrEmpty(row.Target1) && !string.IsNullOrEmpty(row.Action1))
-                {
-                    // Безопасно парсим аргумент. Если там пусто или не число — запишется 0
-                    int.TryParse(row.Argument1, out int argVal);
-
-                    instructions.Add(new ParsedInstruction
-                    {
-                        RowIndex = tableRowNumber,
-                        Target = row.Target1,
-                        Action = row.Action1,
-                        Argument = argVal
-                    });
-                }
-
-                // 2. Проверяем правую команду (Адресат 2 + Действие 2)
-                if (!string.IsNullOrEmpty(row.Target2) && !string.IsNullOrEmpty(row.Action2))
-                {
-                    int.TryParse(row.Argument2, out int argVal);
-
-                    instructions.Add(new ParsedInstruction
-                    {
-                        RowIndex = tableRowNumber,
-                        Target = row.Target2,
-                        Action = row.Action2,
-                        Argument = argVal
-                    });
-                }
-            }
-
-            return instructions;
-        }
+        // Событие, на которое подпишется игровой цикл для применения изменений
+        public event Action<GameSettings>? SettingsChanged;
 
         // Цветовая палитра
         private IBrush _bgGreen;
@@ -214,6 +72,138 @@ namespace DroneSimulator
             _btnDark = CreateRoundedBrush(device, 6, new Color(45, 45, 45));
         }
 
+        private string? ShowOpenFileDialog(string filter, string title)
+        {
+            string? selectedPath = null;
+
+            // Создаем отдельный поток для работы с проводником
+            var thread = new System.Threading.Thread(() =>
+            {
+                using (var dialog = new System.Windows.Forms.OpenFileDialog())
+                {
+                    dialog.Filter = filter;
+                    dialog.Title = title;
+                    if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                    {
+                        selectedPath = dialog.FileName;
+                    }
+                }
+            });
+
+            // Обязательно задаем режим STA для работы COM/ActiveX компонентов Windows
+            thread.SetApartmentState(System.Threading.ApartmentState.STA);
+            thread.Start();
+
+            // Блокируем основной поток игры, пока пользователь не закроет проводник
+            thread.Join();
+
+            return selectedPath;
+        }
+
+        private string? ShowSaveFileDialog(string filter, string title, string defaultFileName)
+        {
+            string? selectedPath = null;
+
+            var thread = new System.Threading.Thread(() =>
+            {
+                using (var dialog = new System.Windows.Forms.SaveFileDialog())
+                {
+                    dialog.Filter = filter;
+                    dialog.Title = title;
+                    dialog.FileName = defaultFileName;
+                    if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                    {
+                        selectedPath = dialog.FileName;
+                    }
+                }
+            });
+
+            thread.SetApartmentState(System.Threading.ApartmentState.STA);
+            thread.Start();
+            thread.Join();
+
+            return selectedPath;
+        }
+
+        // --- ОБНОВЛЕННЫЕ ОСНОВНЫЕ МЕТОДЫ ---
+
+        private void SaveAlgorithm()
+        {
+            string? filePath = ShowSaveFileDialog("JSON файлы (*.json)|*.json", "Сохранить алгоритм", "algorithm.json");
+
+            if (!string.IsNullOrEmpty(filePath))
+            {
+                try
+                {
+                    var options = new JsonSerializerOptions { WriteIndented = true };
+                    string jsonString = JsonSerializer.Serialize(_tableData, options);
+
+                    File.WriteAllText(filePath, jsonString);
+                }
+                catch (Exception ex)
+                {
+                    ShowError($"Не удалось сохранить алгоритм: {ex.Message}");
+                }
+            }
+        }
+
+        private void LoadAlgorithm()
+        {
+            string? filePath = ShowOpenFileDialog("JSON файлы (*.json)|*.json", "Открыть файл алгоритма");
+
+            if (!string.IsNullOrEmpty(filePath))
+            {
+                try
+                {
+                    if (File.Exists(filePath))
+                    {
+                        string jsonString = File.ReadAllText(filePath);
+                        var loadedData = JsonSerializer.Deserialize<List<CommandRow>>(jsonString);
+
+                        if (loadedData != null)
+                        {
+                            _tableData = loadedData;
+                            _selectedRowIndex = 0;
+                            RefreshTableUI();
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ShowError($"Не удалось загрузить алгоритм: {ex.Message}");
+                }
+            }
+        }
+        private void OpenHelpPage()
+        {
+            try
+            {
+                // Укажите здесь нужный URL-адрес или путь к локальному файлу (например, "help.html")
+                string helpTarget = "https://github.com";
+
+                var startInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = helpTarget,
+                    UseShellExecute = true // Этот флаг обязателен в .NET Core/6/8, чтобы запустить системный браузер
+                };
+
+                System.Diagnostics.Process.Start(startInfo);
+            }
+            catch (Exception ex)
+            {
+                ShowError($"Не удалось открыть веб-страницу справки: {ex.Message}");
+            }
+        }
+        private void LoadMap()
+        {
+            string? filePath = ShowOpenFileDialog("Файлы карт (*.json;*.txt)|*.json;*.txt", "Открыть файл карты");
+
+            if (!string.IsNullOrEmpty(filePath))
+            {
+                LoadMapRequested?.Invoke(filePath);
+            }
+        }
+
         public UIManager(MapRenderer mapRenderer)
         {
             InitBrushes();
@@ -222,6 +212,10 @@ namespace DroneSimulator
             var rootContainer = new VerticalStackPanel { Background = _bgGreen };
 
             rootContainer.Widgets.Add(CreateTopMenu());
+
+            _messagePanel = CreateMessagePanel();
+            rootContainer.Widgets.Add(_messagePanel);
+
             rootContainer.Widgets.Add(CreateMainContent(mapRenderer));
 
             _desktop.Root = rootContainer;
@@ -230,7 +224,187 @@ namespace DroneSimulator
             AddEmptyRow();
         }
 
+        private Panel CreateMessagePanel()
+        {
+            _messageTitleLabel = new Label
+            {
+                Text = "Ошибка выполнения",
+                TextColor = Color.White,
+                Margin = new Myra.Graphics2D.Thickness(8, 4)
+            };
+
+            _messageTextLabel = new Label
+            {
+                Text = string.Empty,
+                TextColor = Color.White,
+                Margin = new Myra.Graphics2D.Thickness(8, 4)
+            };
+
+            var closeButton = new TextButton
+            {
+                Text = "Закрыть",
+                Width = 110,
+                Margin = new Myra.Graphics2D.Thickness(8, 4)
+            };
+            StyleButton(closeButton, _btnDark, 32);
+            closeButton.TouchDown += (s, a) => HideMessage();
+
+            var content = new VerticalStackPanel
+            {
+                Spacing = 4,
+                Padding = new Myra.Graphics2D.Thickness(8)
+            };
+
+            content.Widgets.Add(_messageTitleLabel);
+            content.Widgets.Add(_messageTextLabel);
+            content.Widgets.Add(closeButton);
+
+            var panel = new Panel
+            {
+                Background = new SolidBrush(new Color(170, 55, 45)),
+                Margin = new Myra.Graphics2D.Thickness(10, 8),
+                Height = 120,
+                Visible = false
+            };
+
+            panel.Widgets.Add(content);
+            return panel;
+        }
+
+        public void ShowError(string message)
+        {
+            _messagePanel.Background = new SolidBrush(new Color(170, 55, 45));
+            _messageTitleLabel.Text = "Ошибка выполнения алгоритма";
+            _messageTextLabel.Text = message + " Карта возвращена в начальное состояние.";
+            _messagePanel.Visible = true;
+        }
+
+        public void ShowAlgorithmResult(AlgorithmResult result)
+        {
+            _messagePanel.Background = new SolidBrush(new Color(45, 145, 80));
+            _messageTitleLabel.Text = "Алгоритм выполнен успешно";
+            _messageTextLabel.Text =
+                $"Оценка алгоритма - {result.Score}\n" +
+                $"Уничтожено {result.DestroyedWeeds} из {result.InitialWeeds}";
+            _messagePanel.Visible = true;
+        }
+
+        public void HideMessage()
+        {
+            _messagePanel.Visible = false;
+        }
+
+        public void UpdateDroneCharges(IReadOnlyList<DroneChargeInfo> chargeInfos)
+        {
+            _chargeInfoLabels.Clear();
+            _chargeInfoPanel.Widgets.Clear();
+
+            foreach (var info in chargeInfos)
+            {
+                var label = new Label
+                {
+                    Text = $"{info.DroneName} дрон : {info.CurrentCharges}/{info.InitialCharges} зарядов осталось",
+                    TextColor = Color.Black,
+                    Margin = new Myra.Graphics2D.Thickness(0, 3)
+                };
+
+                _chargeInfoLabels.Add(label);
+                _chargeInfoPanel.Widgets.Add(label);
+            }
+        }
+
         public void Render() => _desktop.Render();
+
+        public IReadOnlyList<CommandRow> GetCommandRows()
+        {
+            return _tableData
+                .Select(row => new CommandRow
+                {
+                    Target1 = row.Target1,
+                    Action1 = row.Action1,
+                    Argument1 = row.Argument1,
+                    Target2 = row.Target2,
+                    Action2 = row.Action2,
+                    Argument2 = row.Argument2
+                })
+                .ToList();
+        }
+
+
+        private IReadOnlyList<CommandRow> PrepareCommandRowsForRun()
+        {
+            RemoveIncompleteCommandsFromTable();
+            return GetCommandRows();
+        }
+
+        private void RemoveIncompleteCommandsFromTable()
+        {
+            var normalizedRows = new List<CommandRow>();
+
+            foreach (var row in _tableData)
+            {
+                var commands = new List<CommandRow>();
+
+                if (IsCompleteCommand(row.Target1, row.Action1))
+                {
+                    commands.Add(new CommandRow
+                    {
+                        Target1 = row.Target1,
+                        Action1 = row.Action1,
+                        Argument1 = row.Argument1
+                    });
+                }
+
+                if (IsCompleteCommand(row.Target2, row.Action2))
+                {
+                    commands.Add(new CommandRow
+                    {
+                        Target1 = row.Target2,
+                        Action1 = row.Action2,
+                        Argument1 = row.Argument2
+                    });
+                }
+
+                if (commands.Count == 0)
+                    continue;
+
+                var normalizedRow = new CommandRow
+                {
+                    Target1 = commands[0].Target1,
+                    Action1 = commands[0].Action1,
+                    Argument1 = commands[0].Argument1
+                };
+
+                if (commands.Count > 1)
+                {
+                    normalizedRow.Target2 = commands[1].Target1;
+                    normalizedRow.Action2 = commands[1].Action1;
+                    normalizedRow.Argument2 = commands[1].Argument1;
+                }
+
+                normalizedRows.Add(normalizedRow);
+            }
+
+            _tableData = normalizedRows;
+
+            if (_tableData.Count == 0)
+            {
+                _tableData.Add(new CommandRow());
+            }
+
+            if (_selectedRowIndex >= _tableData.Count)
+            {
+                _selectedRowIndex = _tableData.Count - 1;
+            }
+
+            RefreshTableUI();
+        }
+
+        private static bool IsCompleteCommand(string target, string action)
+        {
+            return !string.IsNullOrWhiteSpace(target) &&
+                   !string.IsNullOrWhiteSpace(action);
+        }
 
         private void StyleButton(TextButton button, IBrush background, int height = 35)
         {
@@ -246,51 +420,143 @@ namespace DroneSimulator
 
         private Widget CreateTopMenu()
         {
-            var menuPanel = new HorizontalStackPanel
+            // Используем HorizontalMenu вместо HorizontalStackPanel для поддержки вложенности
+            var topMenu = new HorizontalMenu
             {
                 Background = _headerGreen,
-                Spacing = 15,
-                Padding = new Myra.Graphics2D.Thickness(10, 5),
-                VerticalAlignment = VerticalAlignment.Center
+                Padding = new Myra.Graphics2D.Thickness(10, 0) // Корректируем внутренние отступы
             };
 
-            string[] menuItems = { "Дрон и тракторы", "Файл", "Выполнить", "Шаг", "До отметки", "На начало", "Помощь", "Настройки" };
+            // 1 Выпадающее меню "Файл"
+            var fileMenu = new MenuItem { Text = "Файл" };
 
-            foreach (var item in menuItems)
-            {
-                if (item == "Выполнить")
-                {
-                    // Создаем кнопку "Выполнить", которая выглядит как плоский текст
-                    var btnExecute = new TextButton
-                    {
-                        Text = item,
-                        Background = null, // Прозрачный фон в обычном состоянии
-                        OverBackground = new SolidBrush(new Color(40, 165, 95)),   // Зеленая подсветка при наведении
-                        PressedBackground = new SolidBrush(new Color(20, 125, 70)), // Темно-зеленый при нажатии
-                        TextColor = Color.White,
-                        Padding = new Myra.Graphics2D.Thickness(8, 4),
-                        VerticalAlignment = VerticalAlignment.Center
-                    };
+            var saveAlgoItem = new MenuItem { Text = "Сохранить алгоритм" };
+            saveAlgoItem.Selected += (s, a) => SaveAlgorithm(); // Вызываем локальный метод сохранения
+            fileMenu.Items.Add(saveAlgoItem);
 
-                    // ВЕШАЕМ НАШ ПАРСЕР ТАБЛИЦЫ НА КЛИК КНОПКИ!
-                    btnExecute.TouchDown += (s, a) => DebugPrintExtractedCommands();
+            var loadAlgoItem = new MenuItem { Text = "Загрузить алгоритм" };
+            loadAlgoItem.Selected += (s, a) => LoadAlgorithm(); // Вызываем локальный метод загрузки
+            fileMenu.Items.Add(loadAlgoItem);
 
-                    menuPanel.Widgets.Add(btnExecute);
-                }
-                else
-                {
-                    // Все остальные пункты меню пока оставляем простыми надписями
-                    menuPanel.Widgets.Add(new Label
-                    {
-                        Text = item,
-                        TextColor = Color.White,
-                        VerticalAlignment = VerticalAlignment.Center
-                    });
-                }
-            }
-            return menuPanel;
+            var loadMapItem = new MenuItem { Text = "Загрузить карту" };
+            loadMapItem.Selected += (s, a) => LoadMap();       // Вызываем локальный метод выбора карты
+            fileMenu.Items.Add(loadMapItem);
+
+            topMenu.Items.Add(fileMenu);
+
+            // 2. Кнопка-меню "Выполнить"
+            var runItem = new MenuItem { Text = "Выполнить" };
+            runItem.Selected += (s, a) => RunRequested?.Invoke(PrepareCommandRowsForRun());
+            topMenu.Items.Add(runItem);
+
+            // 3. Меню "Помощь" (заготовка)
+            var helpItem = new MenuItem { Text = "Помощь" };
+            helpItem.Selected += (s, a) => OpenHelpPage();
+            topMenu.Items.Add(helpItem);
+
+            // 4. Меню "Настройки" (заготовка)
+           
+            var settingsItem = new MenuItem { Text = "Настройки" };
+            settingsItem.Selected += (s, a) => OpenSettings(); // Вызываем метод настроек
+            topMenu.Items.Add(settingsItem);
+
+            return topMenu;
         }
 
+        private void OpenSettings()
+        {
+            var dialog = new Dialog
+            {
+                Title = "Настройки",
+                Width = 350,
+                Height = 180 // Вернули компактный размер окна
+            };
+
+            var grid = new Grid
+            {
+                RowSpacing = 12,
+                ColumnSpacing = 10,
+                Padding = new Myra.Graphics2D.Thickness(15)
+            };
+            grid.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
+            grid.ColumnsProportions.Add(new Proportion(ProportionType.Part));
+
+            // --- 1. ВЫБОР ЯЗЫКА ---
+            grid.RowsProportions.Add(new Proportion(ProportionType.Auto));
+            var langLabel = new Label { Text = "Язык:", TextColor = Color.White, VerticalAlignment = VerticalAlignment.Center };
+            grid.Widgets.Add(langLabel);
+            Grid.SetColumn(langLabel, 0);
+            Grid.SetRow(langLabel, 0);
+
+            var langCombo = new ComboBox();
+            langCombo.Items.Add(new ListItem("Русский"));
+            langCombo.Items.Add(new ListItem("English"));
+            langCombo.SelectedIndex = CurrentSettings.Language == "ru" ? 0 : 1;
+            grid.Widgets.Add(langCombo);
+            Grid.SetColumn(langCombo, 1);
+            Grid.SetRow(langCombo, 0);
+
+            // --- 2. ВЫБОР СКОРОСТИ ---
+            grid.RowsProportions.Add(new Proportion(ProportionType.Auto));
+            var speedLabel = new Label { Text = "Интервал хода (сек):", TextColor = Color.White, VerticalAlignment = VerticalAlignment.Center };
+            grid.Widgets.Add(speedLabel);
+            Grid.SetColumn(speedLabel, 0);
+            Grid.SetRow(speedLabel, 1);
+
+            var speedCombo = new ComboBox();
+            speedCombo.Items.Add(new ListItem("0.25 сек"));
+            speedCombo.Items.Add(new ListItem("0.50 сек"));
+            speedCombo.Items.Add(new ListItem("0.75 сек"));
+            speedCombo.Items.Add(new ListItem("1.00 сек"));
+            speedCombo.SelectedIndex = CurrentSettings.Speed switch
+            {
+                0.25f => 0,
+                0.50f => 1,
+                0.75f => 2,
+                1.00f => 3,
+                _ => 1
+            };
+            grid.Widgets.Add(speedCombo);
+            Grid.SetColumn(speedCombo, 1);
+            Grid.SetRow(speedCombo, 1);
+
+            dialog.Content = grid;
+
+            // --- ОБРАБОТКА ЗАКРЫТИЯ ДИАЛОГА ---
+            dialog.Closed += (s, a) =>
+            {
+                if (dialog.Result)
+                {
+                    CurrentSettings.Language = langCombo.SelectedIndex == 0 ? "ru" : "en";
+
+                    CurrentSettings.Speed = speedCombo.SelectedIndex switch
+                    {
+                        0 => 0.25f,
+                        1 => 0.50f,
+                        2 => 0.75f,
+                        _ => 1.00f
+                    };
+
+                    // Оповещаем подписчиков об изменении только языка и скорости
+                    SettingsChanged?.Invoke(CurrentSettings);
+                }
+            };
+
+            dialog.ShowModal(_desktop);
+        }
+
+        private Widget CreateChargeInfoPanel()
+        {
+            _chargeInfoPanel = new VerticalStackPanel
+            {
+                Spacing = 2,
+                Margin = new Myra.Graphics2D.Thickness(0, 10, 0, 0),
+                Padding = new Myra.Graphics2D.Thickness(10, 8),
+                Background = new SolidBrush(new Color(235, 248, 235))
+            };
+
+            return _chargeInfoPanel;
+        }
 
         private Widget CreateMainContent(MapRenderer mapRenderer)
         {
@@ -298,11 +564,10 @@ namespace DroneSimulator
 
             // ЛЕВАЯ ПАНЕЛЬ
             var leftPanel = new VerticalStackPanel { Padding = new Myra.Graphics2D.Thickness(10) };
-            var mapControls = new HorizontalStackPanel { Spacing = 20, Margin = new Myra.Graphics2D.Thickness(0, 0, 0, 10) };
-            leftPanel.Widgets.Add(mapControls);
 
             var mapImage = new Image { Renderable = new Myra.Graphics2D.TextureAtlases.TextureRegion(mapRenderer.MapTexture) };
             leftPanel.Widgets.Add(mapImage);
+            leftPanel.Widgets.Add(CreateChargeInfoPanel());
 
             mainSplit.Widgets.Add(leftPanel);
 
@@ -421,8 +686,7 @@ namespace DroneSimulator
                 onTextChanged(cleanText);
             };
 
-            textBox.TouchDown += (s, a) =>
-            {
+            textBox.TouchDown += (s, a) => {
                 _selectedRowIndex = rowIndex;
                 UpdateSelectionVisuals(); // Быстрое обновление цветов (фокус ввода НЕ теряется!)
             };
@@ -466,7 +730,6 @@ namespace DroneSimulator
         // Этот метод полностью перерисовывает таблицу на основе списка _tableData
         private void RefreshTableUI()
         {
-            UpdateStatusWithCommands();
             _tableGrid.Widgets.Clear();
             _tableGrid.RowsProportions.Clear();
 
@@ -497,8 +760,7 @@ namespace DroneSimulator
                 var numPanel = new Panel { GridColumn = 0, GridRow = rowNum, Background = numBg };
                 numPanel.Widgets.Add(numLabel);
                 int localIndex = i; // Локальная копия индекса для замыкания
-                numPanel.TouchDown += (s, a) =>
-                {
+                numPanel.TouchDown += (s, a) => {
                     _selectedRowIndex = localIndex;
                     UpdateSelectionVisuals(); // Замени здесь RefreshTableUI() на UpdateSelectionVisuals()
                 };
@@ -521,8 +783,7 @@ namespace DroneSimulator
             var panel = new Panel { GridColumn = col, GridRow = row, Background = backgroundBrush };
             panel.Widgets.Add(new Label { Text = text, Margin = new Myra.Graphics2D.Thickness(5), TextColor = Color.Black });
 
-            panel.TouchDown += (s, a) =>
-            {
+            panel.TouchDown += (s, a) => {
                 _selectedRowIndex = rowIndex;
                 UpdateSelectionVisuals(); // Быстрое обновление цветов
             };
@@ -677,14 +938,6 @@ namespace DroneSimulator
         {
             var controlsLayout = new HorizontalStackPanel { Spacing = 20 };
 
-            _statusLabel = new Label
-            {
-                Text = "Список команд пуст.\nИспользуйте кнопки снизу для планирования.",
-                TextColor = Color.Black,
-                Width = 250,  // Ограничиваем ширину, чтобы текст красиво переносился
-                Wrap = true   // Включаем автоматический перенос длинных строк
-            };
-            controlsLayout.Widgets.Add(_statusLabel);
 
             // Блок АДРЕСАТЫ
             var addresseePanel = new VerticalStackPanel { Spacing = 5 };
@@ -694,11 +947,11 @@ namespace DroneSimulator
             StyleButton(btnTargetAll, _btnDark); // Применяем темный скругленный стиль
             btnTargetAll.TouchDown += (s, a) => InsertTarget("Все");
 
-            var btnTargetRed = new TextButton { Text = "Красный дрон", HorizontalAlignment = HorizontalAlignment.Stretch };
+            var btnTargetRed = new TextButton { Text = "Красный", HorizontalAlignment = HorizontalAlignment.Stretch };
             StyleButton(btnTargetRed, _btnDark);
             btnTargetRed.TouchDown += (s, a) => InsertTarget("Красный");
 
-            var btnTargetGreen = new TextButton { Text = "Зелёный дрон", HorizontalAlignment = HorizontalAlignment.Stretch };
+            var btnTargetGreen = new TextButton { Text = "Зелёный", HorizontalAlignment = HorizontalAlignment.Stretch };
             StyleButton(btnTargetGreen, _btnDark);
             btnTargetGreen.TouchDown += (s, a) => InsertTarget("Зелёный");
 
