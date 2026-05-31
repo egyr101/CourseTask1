@@ -77,15 +77,35 @@ namespace DroneSimulator
             _commandExecutor = new DroneCommandExecutor(_mapRenderer);
 
             _uiManager = new UIManager(_mapRenderer);
-            _commandExecutor.ErrorOccurred += error => _uiManager.ShowError(error);
-            _commandExecutor.Completed += result => _uiManager.ShowAlgorithmResult(result);
+            _commandExecutor.ErrorOccurred += error =>
+            {
+                _uiManager.ShowError(error);
+                _uiManager.SetRunButtonEnabled(true);
+            };
+
+            _commandExecutor.Completed += result =>
+            {
+                _uiManager.ShowAlgorithmResult(result);
+                _uiManager.SetRunButtonEnabled(true);
+            };
             _commandExecutor.ChargesChanged += charges => _uiManager.UpdateDroneCharges(charges);
+            _uiManager.DroneSpeedChanged += speed => Drone.MoveSpeedMultiplier = speed;
             _uiManager.AlgorithmResultClosed += () => _commandExecutor.RestoreMapToInitialState();
             _uiManager.UpdateDroneCharges(_commandExecutor.GetChargeInfo());
             _uiManager.RunRequested += rows =>
             {
+                if (_commandExecutor.IsRunning)
+                    return;
+
                 _uiManager.HideMessage();
+                _uiManager.SetRunButtonEnabled(false);
+
                 _commandExecutor.Start(rows);
+
+                if (!_commandExecutor.IsRunning)
+                {
+                    _uiManager.SetRunButtonEnabled(true);
+                }
             };
         }
 

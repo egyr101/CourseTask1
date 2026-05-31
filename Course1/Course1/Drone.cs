@@ -11,9 +11,13 @@ namespace DroneSimulator
         public Color Color { get; set; }
         public Texture2D Texture { get; set; }
 
-        // Длительность перемещения на одну клетку.
-        // Увеличь значение, чтобы дрон двигался медленнее; уменьши, чтобы двигался быстрее.
-        private const float MoveDurationSeconds = 0.3f;
+        // Базовая длительность перемещения на одну клетку при скорости 1x.
+        // Чем меньше значение, тем быстрее базовое движение.
+        private const float BaseMoveDurationSeconds = 0.3f;
+
+        // Множитель скорости меняется из меню настроек.
+        // 0.5 = медленнее, 1 = обычная скорость, 2 = быстрее.
+        public static float MoveSpeedMultiplier { get; set; } = 1f;
 
         private readonly float _rotationSpeed = MathHelper.Pi * 3f; // Скорость поворота (радиан в секунду)
 
@@ -87,7 +91,9 @@ namespace DroneSimulator
 
             _moveElapsedSeconds += dt;
 
-            float progress = _moveElapsedSeconds / MoveDurationSeconds;
+            float safeMultiplier = Math.Max(0.1f, MoveSpeedMultiplier);
+            float moveDurationSeconds = BaseMoveDurationSeconds / safeMultiplier;
+            float progress = _moveElapsedSeconds / moveDurationSeconds;
 
             if (progress >= 1f)
             {

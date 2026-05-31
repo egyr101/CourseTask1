@@ -8,6 +8,12 @@ using System.Linq;
 
 namespace DroneSimulator
 {
+    public enum GameLanguage
+    {
+        Russian,
+        English
+    }
+
     // Класс, описывающий одну строку в нашей таблице
     public class CommandRow
     {
@@ -23,6 +29,8 @@ namespace DroneSimulator
     {
         public event Action<IReadOnlyList<CommandRow>>? RunRequested;
         public event Action? AlgorithmResultClosed;
+        public event Action<float>? DroneSpeedChanged;
+        public event Action<GameLanguage>? LanguageChanged;
 
         private Desktop _desktop;
         private Grid _tableGrid;
@@ -35,12 +43,48 @@ namespace DroneSimulator
         private Panel _messagePanel;
         private Label _messageTitleLabel;
         private Label _messageTextLabel;
+        private Label _messageCloseLabel;
         private bool _shouldRollbackMapWhenMessageClosed;
 
         private Panel _testAlgorithmsPanel;
+        private Panel _settingsPanel;
+
+        private GameLanguage _language = GameLanguage.Russian;
+        private float _speedMultiplier = 1f;
+
+        private TextButton _loadTestsButton;
+        private TextButton _runButton;
+        private bool _canRunAlgorithm = true;
+        private TextButton _helpButton;
+        private TextButton _settingsButton;
+
+        private TextButton _successTestButton;
+        private TextButton _collisionTestButton;
+        private TextButton _boundaryTestButton;
+        private TextButton _incompleteWeedsTestButton;
+
+        private Label _settingsLanguageLabel;
+        private Label _settingsSpeedLabel;
+        private Label _settingsCurrentLanguageLabel;
+        private Label _settingsCurrentSpeedLabel;
+
+        private Label _addresseeTitleLabel;
+        private Label _commandsTitleLabel;
+        private TextButton _targetAllButton;
+        private TextButton _targetRedButton;
+        private TextButton _targetGreenButton;
+        private TextButton _forwardButton;
+        private TextButton _attackButton;
+        private TextButton _leftButton;
+        private TextButton _rightButton;
+
+        private TextButton _addRowButton;
+        private TextButton _deleteRowButton;
+        private TextButton _clearTableButton;
 
         private VerticalStackPanel _chargeInfoPanel;
         private readonly List<Label> _chargeInfoLabels = new List<Label>();
+        private IReadOnlyList<DroneChargeInfo> _lastChargeInfos = new List<DroneChargeInfo>();
 
         // Цветовая палитра
         private IBrush _bgGreen;
@@ -74,6 +118,9 @@ namespace DroneSimulator
 
             _testAlgorithmsPanel = CreateTestAlgorithmsPanel();
             rootContainer.Widgets.Add(_testAlgorithmsPanel);
+
+            _settingsPanel = CreateSettingsPanel();
+            rootContainer.Widgets.Add(_settingsPanel);
 
             _messagePanel = CreateMessagePanel();
             rootContainer.Widgets.Add(_messagePanel);
@@ -114,13 +161,15 @@ namespace DroneSimulator
                 Background = _btnDark
             };
 
-            closeButton.Widgets.Add(new Label
+            _messageCloseLabel = new Label
             {
                 Text = "Закрыть",
                 TextColor = Color.White,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
-            });
+            };
+
+            closeButton.Widgets.Add(_messageCloseLabel);
 
             closeButton.TouchDown += (s, a) => CloseMessage();
 
@@ -150,8 +199,12 @@ namespace DroneSimulator
         {
             _shouldRollbackMapWhenMessageClosed = false;
             _messagePanel.Background = new SolidBrush(new Color(170, 55, 45));
-            _messageTitleLabel.Text = "Ошибка выполнения алгоритма";
-            _messageTextLabel.Text = message + " Карта возвращена в начальное состояние.";
+            _messageTitleLabel.Text = _language == GameLanguage.Russian
+                ? "Ошибка выполнения алгоритма"
+                : "Algorithm execution error";
+            _messageTextLabel.Text = _language == GameLanguage.Russian
+                ? message + " Карта возвращена в начальное состояние."
+                : message + " The map has been restored to the initial state.";
             _messagePanel.Visible = true;
         }
 
@@ -159,10 +212,15 @@ namespace DroneSimulator
         {
             _shouldRollbackMapWhenMessageClosed = true;
             _messagePanel.Background = new SolidBrush(new Color(45, 145, 80));
-            _messageTitleLabel.Text = "Алгоритм выполнен успешно";
-            _messageTextLabel.Text =
-                $"Оценка алгоритма - {result.Score}\n" +
-                $"Уничтожено {result.DestroyedWeeds} из {result.InitialWeeds}";
+            _messageTitleLabel.Text = _language == GameLanguage.Russian
+                ? "Алгоритм выполнен успешно"
+                : "Algorithm completed successfully";
+
+            _messageTextLabel.Text = _language == GameLanguage.Russian
+                ? $"Оценка алгоритма - {result.Score}\n" +
+                  $"Уничтожено {result.DestroyedWeeds} из {result.InitialWeeds}"
+                : $"Algorithm score - {result.Score}\n" +
+                  $"Destroyed {result.DestroyedWeeds} of {result.InitialWeeds}";
             _messagePanel.Visible = true;
         }
 
@@ -186,6 +244,7 @@ namespace DroneSimulator
 
         public void UpdateDroneCharges(IReadOnlyList<DroneChargeInfo> chargeInfos)
         {
+            _lastChargeInfos = chargeInfos;
             _chargeInfoLabels.Clear();
             _chargeInfoPanel.Widgets.Clear();
 
@@ -193,7 +252,7 @@ namespace DroneSimulator
             {
                 var label = new Label
                 {
-                    Text = $"{info.DroneName} дрон : {info.CurrentCharges}/{info.InitialCharges} зарядов осталось",
+                    Text = FormatChargeInfo(info),
                     TextColor = Color.Black,
                     Margin = new Myra.Graphics2D.Thickness(0, 3)
                 };
@@ -201,6 +260,26 @@ namespace DroneSimulator
                 _chargeInfoLabels.Add(label);
                 _chargeInfoPanel.Widgets.Add(label);
             }
+        }
+
+        public void SetRunButtonEnabled(bool isEnabled)
+        {
+            _canRunAlgorithm = isEnabled;
+
+            if (_runButton == null)
+                return;
+
+            _runButton.TextColor = isEnabled
+                ? Color.White
+                : new Color(150, 150, 150);
+
+            _runButton.Background = isEnabled
+                ? null
+                : new SolidBrush(new Color(40, 40, 40, 120));
+
+            _runButton.OverBackground = _runButton.Background;
+            _runButton.PressedBackground = _runButton.Background;
+            _runButton.FocusedBackground = _runButton.Background;
         }
 
         public void Render() => _desktop.Render();
@@ -318,38 +397,48 @@ namespace DroneSimulator
                 Padding = new Myra.Graphics2D.Thickness(10, 5)
             };
 
-            menuPanel.Widgets.Add(new Label { Text = "Дроны", TextColor = Color.White });
-
-            var loadTestsButton = new TextButton
-            {
-                Text = "Загрузить тестовые алгоритмы",
-                Background = null,
-                OverBackground = null,
-                PressedBackground = null,
-                TextColor = Color.White
-            };
-            loadTestsButton.TouchDown += (s, a) =>
+            _loadTestsButton = CreateTopMenuButton("Загрузить тестовые алгоритмы");
+            _loadTestsButton.TouchDown += (s, a) =>
             {
                 _testAlgorithmsPanel.Visible = !_testAlgorithmsPanel.Visible;
+                _settingsPanel.Visible = false;
             };
-            menuPanel.Widgets.Add(loadTestsButton);
+            menuPanel.Widgets.Add(_loadTestsButton);
 
-            var runButton = new TextButton
+            _runButton = CreateTopMenuButton("Выполнить");
+            _runButton.TouchDown += (s, a) =>
             {
-                Text = "Выполнить",
+                if (!_canRunAlgorithm)
+                    return;
+
+                RunRequested?.Invoke(PrepareCommandRowsForRun());
+            };
+            menuPanel.Widgets.Add(_runButton);
+
+            _helpButton = CreateTopMenuButton("Помощь");
+            menuPanel.Widgets.Add(_helpButton);
+
+            _settingsButton = CreateTopMenuButton("Настройки");
+            _settingsButton.TouchDown += (s, a) =>
+            {
+                _settingsPanel.Visible = !_settingsPanel.Visible;
+                _testAlgorithmsPanel.Visible = false;
+            };
+            menuPanel.Widgets.Add(_settingsButton);
+
+            return menuPanel;
+        }
+
+        private TextButton CreateTopMenuButton(string text)
+        {
+            return new TextButton
+            {
+                Text = text,
                 Background = null,
                 OverBackground = null,
                 PressedBackground = null,
                 TextColor = Color.White
             };
-            runButton.TouchDown += (s, a) => RunRequested?.Invoke(PrepareCommandRowsForRun());
-            menuPanel.Widgets.Add(runButton);
-
-            string[] menuItemsAfterRun = { "Шаг", "До отметки", "На начало", "Помощь", "Настройки" };
-            foreach (var item in menuItemsAfterRun)
-                menuPanel.Widgets.Add(new Label { Text = item, TextColor = Color.White });
-
-            return menuPanel;
         }
 
         private Panel CreateTestAlgorithmsPanel()
@@ -367,24 +456,225 @@ namespace DroneSimulator
                 Padding = new Myra.Graphics2D.Thickness(8)
             };
 
-            content.Widgets.Add(CreateTestAlgorithmButton(
+            _successTestButton = CreateTestAlgorithmButton(
                 "Успешный алгоритм",
-                CreateSuccessfulAlgorithmRows));
+                CreateSuccessfulAlgorithmRows);
+            content.Widgets.Add(_successTestButton);
 
-            content.Widgets.Add(CreateTestAlgorithmButton(
+            _collisionTestButton = CreateTestAlgorithmButton(
                 "Столкновение дронов",
-                CreateCollisionAlgorithmRows));
+                CreateCollisionAlgorithmRows);
+            content.Widgets.Add(_collisionTestButton);
 
-            content.Widgets.Add(CreateTestAlgorithmButton(
+            _boundaryTestButton = CreateTestAlgorithmButton(
                 "Дрон врезается в границу карты",
-                CreateBoundaryCrashAlgorithmRows));
+                CreateBoundaryCrashAlgorithmRows);
+            content.Widgets.Add(_boundaryTestButton);
 
-            content.Widgets.Add(CreateTestAlgorithmButton(
+            _incompleteWeedsTestButton = CreateTestAlgorithmButton(
                 "Уничтожены не все сорняки",
-                CreateIncompleteWeedAlgorithmRows));
+                CreateIncompleteWeedAlgorithmRows);
+            content.Widgets.Add(_incompleteWeedsTestButton);
 
             panel.Widgets.Add(content);
             return panel;
+        }
+
+        private Panel CreateSettingsPanel()
+        {
+            var panel = new Panel
+            {
+                Background = new SolidBrush(new Color(210, 235, 220)),
+                Margin = new Myra.Graphics2D.Thickness(10, 6),
+                Visible = false
+            };
+
+            var content = new VerticalStackPanel
+            {
+                Spacing = 8,
+                Padding = new Myra.Graphics2D.Thickness(8)
+            };
+
+            _settingsLanguageLabel = new Label
+            {
+                Text = "Язык",
+                TextColor = Color.Black
+            };
+            content.Widgets.Add(_settingsLanguageLabel);
+
+            var languageButtons = new HorizontalStackPanel { Spacing = 8 };
+            languageButtons.Widgets.Add(CreateSettingsButton("Русский", () => SetLanguage(GameLanguage.Russian)));
+            languageButtons.Widgets.Add(CreateSettingsButton("English", () => SetLanguage(GameLanguage.English)));
+            content.Widgets.Add(languageButtons);
+
+            _settingsCurrentLanguageLabel = new Label
+            {
+                Text = "Текущий язык: Русский",
+                TextColor = Color.Black
+            };
+            content.Widgets.Add(_settingsCurrentLanguageLabel);
+
+            _settingsSpeedLabel = new Label
+            {
+                Text = "Скорость передвижения дронов",
+                TextColor = Color.Black,
+                Margin = new Myra.Graphics2D.Thickness(0, 8, 0, 0)
+            };
+            content.Widgets.Add(_settingsSpeedLabel);
+
+            var speedButtons = new HorizontalStackPanel { Spacing = 8 };
+            speedButtons.Widgets.Add(CreateSettingsButton("0.5x", () => SetDroneSpeed(0.5f)));
+            speedButtons.Widgets.Add(CreateSettingsButton("1x", () => SetDroneSpeed(1f)));
+            speedButtons.Widgets.Add(CreateSettingsButton("2x", () => SetDroneSpeed(2f)));
+            content.Widgets.Add(speedButtons);
+
+            _settingsCurrentSpeedLabel = new Label
+            {
+                Text = "Текущая скорость: 1x",
+                TextColor = Color.Black
+            };
+            content.Widgets.Add(_settingsCurrentSpeedLabel);
+
+            panel.Widgets.Add(content);
+            return panel;
+        }
+
+        private TextButton CreateSettingsButton(string text, Action onClick)
+        {
+            var button = new TextButton
+            {
+                Text = text,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+
+            StyleButton(button, _btnDark, 34);
+            button.TouchDown += (s, a) => onClick();
+            return button;
+        }
+
+        private void SetLanguage(GameLanguage language)
+        {
+            _language = language;
+            UpdateLanguageTexts();
+            RefreshTableUI();
+            LanguageChanged?.Invoke(language);
+        }
+
+        private void SetDroneSpeed(float speedMultiplier)
+        {
+            _speedMultiplier = speedMultiplier;
+            UpdateSettingsStateLabels();
+            DroneSpeedChanged?.Invoke(speedMultiplier);
+        }
+
+        private void UpdateLanguageTexts()
+        {
+            if (_language == GameLanguage.Russian)
+            {
+                _loadTestsButton.Text = "Загрузить тестовые алгоритмы";
+                _runButton.Text = "Выполнить";
+                _helpButton.Text = "Помощь";
+                _settingsButton.Text = "Настройки";
+                _messageCloseLabel.Text = "Закрыть";
+
+                _successTestButton.Text = "Успешный алгоритм";
+                _collisionTestButton.Text = "Столкновение дронов";
+                _boundaryTestButton.Text = "Дрон врезается в границу карты";
+                _incompleteWeedsTestButton.Text = "Уничтожены не все сорняки";
+
+                _addRowButton.Text = "Вставить строку";
+                _deleteRowButton.Text = "Удалить строку";
+                _clearTableButton.Text = "Очистить таблицу";
+
+                _addresseeTitleLabel.Text = "Адресаты";
+                _commandsTitleLabel.Text = "Команды";
+            }
+            else
+            {
+                _loadTestsButton.Text = "Load test algorithms";
+                _runButton.Text = "Run";
+                _helpButton.Text = "Help";
+                _settingsButton.Text = "Settings";
+                _messageCloseLabel.Text = "Close";
+
+                _successTestButton.Text = "Successful algorithm";
+                _collisionTestButton.Text = "Drone collision";
+                _boundaryTestButton.Text = "Drone hits map border";
+                _incompleteWeedsTestButton.Text = "Not all weeds destroyed";
+
+                _addRowButton.Text = "Insert row";
+                _deleteRowButton.Text = "Delete row";
+                _clearTableButton.Text = "Clear table";
+
+                _addresseeTitleLabel.Text = "Targets";
+                _commandsTitleLabel.Text = "Commands";
+            }
+
+            _targetAllButton.Text = TargetAllText();
+            _targetRedButton.Text = TargetRedText();
+            _targetGreenButton.Text = TargetGreenText();
+            _forwardButton.Text = ActionForwardText();
+            _attackButton.Text = ActionAttackText();
+            _leftButton.Text = ActionLeftText();
+            _rightButton.Text = ActionRightText();
+
+            UpdateSettingsStateLabels();
+            UpdateDroneCharges(_lastChargeInfos);
+        }
+
+        private void UpdateSettingsStateLabels()
+        {
+            if (_language == GameLanguage.Russian)
+            {
+                _settingsLanguageLabel.Text = "Язык";
+                _settingsSpeedLabel.Text = "Скорость передвижения дронов";
+                _settingsCurrentLanguageLabel.Text = "Текущий язык: Русский";
+                _settingsCurrentSpeedLabel.Text = $"Текущая скорость: {FormatSpeedMultiplier()}";
+            }
+            else
+            {
+                _settingsLanguageLabel.Text = "Language";
+                _settingsSpeedLabel.Text = "Drone movement speed";
+                _settingsCurrentLanguageLabel.Text = "Current language: English";
+                _settingsCurrentSpeedLabel.Text = $"Current speed: {FormatSpeedMultiplier()}";
+            }
+        }
+
+        private string FormatSpeedMultiplier()
+        {
+            return _speedMultiplier.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "x";
+        }
+
+        private string TargetAllText() => _language == GameLanguage.Russian ? "Все" : "All";
+        private string TargetRedText() => _language == GameLanguage.Russian ? "Красный" : "Red";
+        private string TargetGreenText() => _language == GameLanguage.Russian ? "Зелёный" : "Green";
+
+        private string ActionForwardText() => _language == GameLanguage.Russian ? "Вперёд" : "Forward";
+        private string ActionAttackText() => _language == GameLanguage.Russian ? "Разряд" : "Attack";
+        private string ActionLeftText() => _language == GameLanguage.Russian ? "Налево" : "Left";
+        private string ActionRightText() => _language == GameLanguage.Russian ? "Направо" : "Right";
+
+        private static bool IsAllTarget(string target)
+        {
+            string normalized = target.Trim();
+            return normalized == "Все" || normalized == "All";
+        }
+
+        private string FormatChargeInfo(DroneChargeInfo info)
+        {
+            if (_language == GameLanguage.Russian)
+            {
+                return $"{info.DroneName} дрон : {info.CurrentCharges}/{info.InitialCharges} зарядов осталось";
+            }
+
+            string droneName = info.DroneName switch
+            {
+                "Красный" => "Red",
+                "Зелёный" => "Green",
+                _ => info.DroneName
+            };
+
+            return $"{droneName} drone: {info.CurrentCharges}/{info.InitialCharges} charges left";
         }
 
         private TextButton CreateTestAlgorithmButton(
@@ -415,7 +705,7 @@ namespace DroneSimulator
             RefreshTableUI();
         }
 
-        private static CommandRow Row(
+        private CommandRow Row(
             string target1,
             string action1,
             string argument1 = "",
@@ -434,45 +724,45 @@ namespace DroneSimulator
             };
         }
 
-        private static List<CommandRow> CreateSuccessfulAlgorithmRows()
+        private List<CommandRow> CreateSuccessfulAlgorithmRows()
         {
             return new List<CommandRow>
             {
-                Row("Красный", "Разряд", "", "Зелёный", "Разряд"),
-                Row("Красный", "Вперёд", "", "Зелёный", "Вперёд"),
-                Row("Красный", "Разряд", "", "Зелёный", "Разряд"),
-                Row("Красный", "Вперёд"),
-                Row("Красный", "Налево"),
-                Row("Красный", "Разряд")
+                Row(TargetRedText(), ActionAttackText(), "", TargetGreenText(), ActionAttackText()),
+                Row(TargetRedText(), ActionForwardText(), "", TargetGreenText(), ActionForwardText()),
+                Row(TargetRedText(), ActionAttackText(), "", TargetGreenText(), ActionAttackText()),
+                Row(TargetRedText(), ActionForwardText()),
+                Row(TargetRedText(), ActionLeftText()),
+                Row(TargetRedText(), ActionAttackText())
             };
         }
 
-        private static List<CommandRow> CreateCollisionAlgorithmRows()
+        private List<CommandRow> CreateCollisionAlgorithmRows()
         {
             return new List<CommandRow>
             {
-                Row("Красный", "Вперёд", "3", "Зелёный", "Налево"),
-                Row("Зелёный", "Вперёд", "3"),
-                Row("Зелёный", "Налево"),
-                Row("Зелёный", "Вперёд", "5")
+                Row(TargetRedText(), ActionForwardText(), "3", TargetGreenText(), ActionLeftText()),
+                Row(TargetGreenText(), ActionForwardText(), "3"),
+                Row(TargetGreenText(), ActionLeftText()),
+                Row(TargetGreenText(), ActionForwardText(), "5")
             };
         }
 
-        private static List<CommandRow> CreateBoundaryCrashAlgorithmRows()
+        private List<CommandRow> CreateBoundaryCrashAlgorithmRows()
         {
             return new List<CommandRow>
             {
-                Row("Красный", "Налево"),
-                Row("Красный", "Вперёд", "6")
+                Row(TargetRedText(), ActionLeftText()),
+                Row(TargetRedText(), ActionForwardText(), "6")
             };
         }
 
-        private static List<CommandRow> CreateIncompleteWeedAlgorithmRows()
+        private List<CommandRow> CreateIncompleteWeedAlgorithmRows()
         {
             return new List<CommandRow>
             {
-                Row("Красный", "Разряд", "", "Зелёный", "Разряд"),
-                Row("Красный", "Вперёд", "", "Зелёный", "Вперёд")
+                Row(TargetRedText(), ActionAttackText(), "", TargetGreenText(), ActionAttackText()),
+                Row(TargetRedText(), ActionForwardText(), "", TargetGreenText(), ActionForwardText())
             };
         }
 
@@ -517,21 +807,21 @@ namespace DroneSimulator
         {
             var toolbar = new HorizontalStackPanel { Spacing = 5, Margin = new Myra.Graphics2D.Thickness(0, 0, 0, 5) };
 
-            var btnAddRow = new TextButton { Text = "Вставить строку" };
-            StyleButton(btnAddRow, _btnGreen); // Применяем стиль крупной зеленой кнопки
-            btnAddRow.TouchDown += (s, a) => AddEmptyRow();
+            _addRowButton = new TextButton { Text = "Вставить строку" };
+            StyleButton(_addRowButton, _btnGreen);
+            _addRowButton.TouchDown += (s, a) => AddEmptyRow();
 
-            var btnDelRow = new TextButton { Text = "Удалить строку" };
-            StyleButton(btnDelRow, _btnGreen);
-            btnDelRow.TouchDown += (s, a) => DeleteLastRow();
+            _deleteRowButton = new TextButton { Text = "Удалить строку" };
+            StyleButton(_deleteRowButton, _btnGreen);
+            _deleteRowButton.TouchDown += (s, a) => DeleteLastRow();
 
-            var btnClear = new TextButton { Text = "Очистить таблицу" };
-            StyleButton(btnClear, _btnGreen);
-            btnClear.TouchDown += (s, a) => ClearTable();
+            _clearTableButton = new TextButton { Text = "Очистить таблицу" };
+            StyleButton(_clearTableButton, _btnGreen);
+            _clearTableButton.TouchDown += (s, a) => ClearTable();
 
-            toolbar.Widgets.Add(btnAddRow);
-            toolbar.Widgets.Add(btnDelRow);
-            toolbar.Widgets.Add(btnClear);
+            toolbar.Widgets.Add(_addRowButton);
+            toolbar.Widgets.Add(_deleteRowButton);
+            toolbar.Widgets.Add(_clearTableButton);
 
             return toolbar;
         }
@@ -666,7 +956,9 @@ namespace DroneSimulator
 
             // 1. Отрисовка заголовков
             _tableGrid.RowsProportions.Add(new Proportion(ProportionType.Auto));
-            string[] headers = { "№", "Адресат", "Действие", "Аргумент", "Адресат", "Действие", "Аргумент" };
+            string[] headers = _language == GameLanguage.Russian
+                ? new[] { "№", "Адресат", "Действие", "Аргумент", "Адресат", "Действие", "Аргумент" }
+                : new[] { "#", "Target", "Action", "Argument", "Target", "Action", "Argument" };
             for (int i = 0; i < headers.Length; i++)
             {
                 _tableGrid.Widgets.Add(new Label { Text = headers[i], GridColumn = i, GridRow = 0, Margin = new Myra.Graphics2D.Thickness(5), TextColor = Color.Black });
@@ -735,7 +1027,7 @@ namespace DroneSimulator
                 activeRow.Target1 = target;
             }
             // Если первый адресат "Все", то второй адресат заблокирован. Создаем новую строку!
-            else if (activeRow.Target1 == "Все")
+            else if (IsAllTarget(activeRow.Target1))
             {
                 var newRow = new CommandRow { Target1 = target };
                 _tableData.Add(newRow);
@@ -841,7 +1133,7 @@ namespace DroneSimulator
                 activeRow.Action1 = action;
             }
             // Если первый адресат "Все", то второе действие заблокировано. Создаем новую строку!
-            else if (activeRow.Target1 == "Все")
+            else if (IsAllTarget(activeRow.Target1))
             {
                 var newRow = new CommandRow { Action1 = action };
                 _tableData.Add(newRow);
@@ -872,54 +1164,56 @@ namespace DroneSimulator
 
             // Блок АДРЕСАТЫ
             var addresseePanel = new VerticalStackPanel { Spacing = 5 };
-            addresseePanel.Widgets.Add(new Label { Text = "Адресаты", HorizontalAlignment = HorizontalAlignment.Center, TextColor = Color.Black });
+            _addresseeTitleLabel = new Label { Text = "Адресаты", HorizontalAlignment = HorizontalAlignment.Center, TextColor = Color.Black };
+            addresseePanel.Widgets.Add(_addresseeTitleLabel);
 
-            var btnTargetAll = new TextButton { Text = "Все", HorizontalAlignment = HorizontalAlignment.Stretch };
-            StyleButton(btnTargetAll, _btnDark); // Применяем темный скругленный стиль
-            btnTargetAll.TouchDown += (s, a) => InsertTarget("Все");
+            _targetAllButton = new TextButton { Text = TargetAllText(), HorizontalAlignment = HorizontalAlignment.Stretch };
+            StyleButton(_targetAllButton, _btnDark);
+            _targetAllButton.TouchDown += (s, a) => InsertTarget(TargetAllText());
 
-            var btnTargetRed = new TextButton { Text = "Красный", HorizontalAlignment = HorizontalAlignment.Stretch };
-            StyleButton(btnTargetRed, _btnDark);
-            btnTargetRed.TouchDown += (s, a) => InsertTarget("Красный");
+            _targetRedButton = new TextButton { Text = TargetRedText(), HorizontalAlignment = HorizontalAlignment.Stretch };
+            StyleButton(_targetRedButton, _btnDark);
+            _targetRedButton.TouchDown += (s, a) => InsertTarget(TargetRedText());
 
-            var btnTargetGreen = new TextButton { Text = "Зелёный", HorizontalAlignment = HorizontalAlignment.Stretch };
-            StyleButton(btnTargetGreen, _btnDark);
-            btnTargetGreen.TouchDown += (s, a) => InsertTarget("Зелёный");
+            _targetGreenButton = new TextButton { Text = TargetGreenText(), HorizontalAlignment = HorizontalAlignment.Stretch };
+            StyleButton(_targetGreenButton, _btnDark);
+            _targetGreenButton.TouchDown += (s, a) => InsertTarget(TargetGreenText());
 
-            addresseePanel.Widgets.Add(btnTargetAll);
-            addresseePanel.Widgets.Add(btnTargetRed);
-            addresseePanel.Widgets.Add(btnTargetGreen);
+            addresseePanel.Widgets.Add(_targetAllButton);
+            addresseePanel.Widgets.Add(_targetRedButton);
+            addresseePanel.Widgets.Add(_targetGreenButton);
             controlsLayout.Widgets.Add(addresseePanel);
 
             // Блок КОМАНДЫ
             var commandPanel = new VerticalStackPanel { Spacing = 5 };
-            commandPanel.Widgets.Add(new Label { Text = "Команды", HorizontalAlignment = HorizontalAlignment.Center, TextColor = Color.Black });
+            _commandsTitleLabel = new Label { Text = "Команды", HorizontalAlignment = HorizontalAlignment.Center, TextColor = Color.Black };
+            commandPanel.Widgets.Add(_commandsTitleLabel);
 
             var cmdGrid = new Grid { RowSpacing = 5, ColumnSpacing = 5 };
             cmdGrid.ColumnsProportions.Add(new Proportion(ProportionType.Part));
             cmdGrid.ColumnsProportions.Add(new Proportion(ProportionType.Part));
 
             // Создаем кнопки команд и сразу привязываем к ним логику добавления текста
-            var btnFwd = new TextButton { Text = "Вперёд", GridRow = 0, GridColumn = 0, GridColumnSpan = 2, HorizontalAlignment = HorizontalAlignment.Stretch };
-            btnFwd.TouchDown += (s, a) => InsertAction("Вперёд");
-            StyleButton(btnFwd, _btnDark);
+            _forwardButton = new TextButton { Text = ActionForwardText(), GridRow = 0, GridColumn = 0, GridColumnSpan = 2, HorizontalAlignment = HorizontalAlignment.Stretch };
+            _forwardButton.TouchDown += (s, a) => InsertAction(ActionForwardText());
+            StyleButton(_forwardButton, _btnDark);
 
-            var btnDischarge = new TextButton { Text = "Разряд", GridRow = 1, GridColumn = 0, GridColumnSpan = 2, HorizontalAlignment = HorizontalAlignment.Stretch };
-            btnDischarge.TouchDown += (s, a) => InsertAction("Разряд");
-            StyleButton(btnDischarge, _btnDark);
+            _attackButton = new TextButton { Text = ActionAttackText(), GridRow = 1, GridColumn = 0, GridColumnSpan = 2, HorizontalAlignment = HorizontalAlignment.Stretch };
+            _attackButton.TouchDown += (s, a) => InsertAction(ActionAttackText());
+            StyleButton(_attackButton, _btnDark);
 
-            var btnLeft = new TextButton { Text = "Налево", GridRow = 2, GridColumn = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
-            btnLeft.TouchDown += (s, a) => InsertAction("Налево");
-            StyleButton(btnLeft, _btnDark);
+            _leftButton = new TextButton { Text = ActionLeftText(), GridRow = 2, GridColumn = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
+            _leftButton.TouchDown += (s, a) => InsertAction(ActionLeftText());
+            StyleButton(_leftButton, _btnDark);
 
-            var btnRight = new TextButton { Text = "Направо", GridRow = 2, GridColumn = 1, HorizontalAlignment = HorizontalAlignment.Stretch };
-            btnRight.TouchDown += (s, a) => InsertAction("Направо");
-            StyleButton(btnRight, _btnDark);
+            _rightButton = new TextButton { Text = ActionRightText(), GridRow = 2, GridColumn = 1, HorizontalAlignment = HorizontalAlignment.Stretch };
+            _rightButton.TouchDown += (s, a) => InsertAction(ActionRightText());
+            StyleButton(_rightButton, _btnDark);
 
-            cmdGrid.Widgets.Add(btnFwd);
-            cmdGrid.Widgets.Add(btnDischarge);
-            cmdGrid.Widgets.Add(btnLeft);
-            cmdGrid.Widgets.Add(btnRight);
+            cmdGrid.Widgets.Add(_forwardButton);
+            cmdGrid.Widgets.Add(_attackButton);
+            cmdGrid.Widgets.Add(_leftButton);
+            cmdGrid.Widgets.Add(_rightButton);
 
             commandPanel.Widgets.Add(cmdGrid);
             controlsLayout.Widgets.Add(commandPanel);

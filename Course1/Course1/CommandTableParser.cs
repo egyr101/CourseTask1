@@ -42,14 +42,19 @@ namespace DroneSimulator
             return text.Trim() switch
             {
                 "Все" => DroneTarget.All,
+                "All" => DroneTarget.All,
 
                 "Красный" => DroneTarget.Red,
                 "Красный дрон" => DroneTarget.Red,
+                "Red" => DroneTarget.Red,
+                "Red drone" => DroneTarget.Red,
 
                 "Зелёный" => DroneTarget.Green,
                 "Зеленый" => DroneTarget.Green,
                 "Зелёный дрон" => DroneTarget.Green,
                 "Зеленый дрон" => DroneTarget.Green,
+                "Green" => DroneTarget.Green,
+                "Green drone" => DroneTarget.Green,
 
                 _ => throw new InvalidOperationException($"Неизвестный адресат команды: {text}")
             };
@@ -61,11 +66,15 @@ namespace DroneSimulator
             {
                 "Вперёд" => DroneCommandType.MoveForward,
                 "Вперед" => DroneCommandType.MoveForward,
+                "Forward" => DroneCommandType.MoveForward,
 
                 "Налево" => DroneCommandType.TurnLeft,
+                "Left" => DroneCommandType.TurnLeft,
                 "Направо" => DroneCommandType.TurnRight,
+                "Right" => DroneCommandType.TurnRight,
 
                 "Разряд" => DroneCommandType.Attack,
+                "Attack" => DroneCommandType.Attack,
 
                 _ => throw new InvalidOperationException($"Неизвестная команда: {text}")
             };
