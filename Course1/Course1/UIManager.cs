@@ -17,12 +17,16 @@ namespace DroneSimulator
     // Класс, описывающий одну строку в нашей таблице
     public class CommandRow
     {
+        // Номер тика, к которому относится строка таблицы.
+        // Один тик может занимать несколько строк, если дронов больше двух.
+        public int TickNumber { get; set; }
+
         public string Target1 { get; set; } = "";
         public string Action1 { get; set; } = "";
-        public string Argument1 { get; set; } = ""; // Новый аргумент 1
+        public string Argument1 { get; set; } = "";
         public string Target2 { get; set; } = "";
         public string Action2 { get; set; } = "";
-        public string Argument2 { get; set; } = ""; // Новый аргумент 2
+        public string Argument2 { get; set; } = "";
     }
 
     public class UIManager
@@ -290,6 +294,7 @@ namespace DroneSimulator
             return _tableData
                 .Select(row => new CommandRow
                 {
+                    TickNumber = row.TickNumber,
                     Target1 = row.Target1,
                     Action1 = row.Action1,
                     Argument1 = row.Argument1,
@@ -311,56 +316,63 @@ namespace DroneSimulator
         private void RemoveIncompleteCommandsFromTable()
         {
             var normalizedRows = new List<CommandRow>();
+            int newTickNumber = 1;
 
-            foreach (var row in _tableData)
+            foreach (var tickRows in GetContiguousTickGroups(_tableData))
             {
-                var commands = new List<CommandRow>();
+                var commands = new List<CommandCellData>();
 
-                if (IsCompleteCommand(row.Target1, row.Action1))
+                foreach (var row in tickRows)
                 {
-                    commands.Add(new CommandRow
+                    if (IsCompleteCommand(row.Target1, row.Action1))
                     {
-                        Target1 = row.Target1,
-                        Action1 = row.Action1,
-                        Argument1 = row.Argument1
-                    });
-                }
+                        commands.Add(new CommandCellData(row.Target1, row.Action1, row.Argument1));
+                    }
 
-                if (IsCompleteCommand(row.Target2, row.Action2))
-                {
-                    commands.Add(new CommandRow
+                    if (IsCompleteCommand(row.Target2, row.Action2))
                     {
-                        Target1 = row.Target2,
-                        Action1 = row.Action2,
-                        Argument1 = row.Argument2
-                    });
+                        commands.Add(new CommandCellData(row.Target2, row.Action2, row.Argument2));
+                    }
                 }
 
                 if (commands.Count == 0)
                     continue;
 
-                var normalizedRow = new CommandRow
+                // Один тик не должен содержать больше отдельных команд, чем дронов на карте.
+                // Это защищает таблицу от ручных/старых данных, которые нарушают новое ограничение.
+                if (_droneTargetCount > 0 && commands.Count > _droneTargetCount)
                 {
-                    Target1 = commands[0].Target1,
-                    Action1 = commands[0].Action1,
-                    Argument1 = commands[0].Argument1
-                };
-
-                if (commands.Count > 1)
-                {
-                    normalizedRow.Target2 = commands[1].Target1;
-                    normalizedRow.Action2 = commands[1].Action1;
-                    normalizedRow.Argument2 = commands[1].Argument1;
+                    commands = commands.Take(_droneTargetCount).ToList();
                 }
 
-                normalizedRows.Add(normalizedRow);
+                for (int i = 0; i < commands.Count; i += 2)
+                {
+                    var row = new CommandRow
+                    {
+                        TickNumber = newTickNumber,
+                        Target1 = commands[i].Target,
+                        Action1 = commands[i].Action,
+                        Argument1 = commands[i].Argument
+                    };
+
+                    if (i + 1 < commands.Count)
+                    {
+                        row.Target2 = commands[i + 1].Target;
+                        row.Action2 = commands[i + 1].Action;
+                        row.Argument2 = commands[i + 1].Argument;
+                    }
+
+                    normalizedRows.Add(row);
+                }
+
+                newTickNumber++;
             }
 
             _tableData = normalizedRows;
 
             if (_tableData.Count == 0)
             {
-                _tableData.Add(new CommandRow());
+                _tableData.Add(new CommandRow { TickNumber = 1 });
             }
 
             if (_selectedRowIndex >= _tableData.Count)
@@ -369,6 +381,47 @@ namespace DroneSimulator
             }
 
             RefreshTableUI();
+        }
+
+        private sealed class CommandCellData
+        {
+            public string Target { get; }
+            public string Action { get; }
+            public string Argument { get; }
+
+            public CommandCellData(string target, string action, string argument)
+            {
+                Target = target;
+                Action = action;
+                Argument = argument;
+            }
+        }
+
+        private static IEnumerable<List<CommandRow>> GetContiguousTickGroups(IEnumerable<CommandRow> rows)
+        {
+            var currentGroup = new List<CommandRow>();
+            int? currentTick = null;
+            int fallbackTick = 1;
+
+            foreach (var row in rows)
+            {
+                int tick = row.TickNumber > 0 ? row.TickNumber : fallbackTick;
+
+                if (currentTick.HasValue && tick != currentTick.Value)
+                {
+                    yield return currentGroup;
+                    currentGroup = new List<CommandRow>();
+                }
+
+                currentGroup.Add(row);
+                currentTick = tick;
+                fallbackTick++;
+            }
+
+            if (currentGroup.Count > 0)
+            {
+                yield return currentGroup;
+            }
         }
 
         private static bool IsCompleteCommand(string target, string action)
@@ -699,6 +752,129 @@ namespace DroneSimulator
             return droneName;
         }
 
+        private int MaxRowsPerTick => Math.Max(1, (_droneTargetCount + 1) / 2);
+
+        private int GetNextTickNumber()
+        {
+            return _tableData.Count == 0
+                ? 1
+                : _tableData.Max(row => row.TickNumber) + 1;
+        }
+
+        private bool IsCommandSlotOccupied(string target, string action)
+        {
+            return !string.IsNullOrWhiteSpace(target) ||
+                   !string.IsNullOrWhiteSpace(action);
+        }
+
+        private bool IsRowFull(CommandRow row)
+        {
+            return IsCommandSlotOccupied(row.Target1, row.Action1) &&
+                   IsCommandSlotOccupied(row.Target2, row.Action2);
+        }
+
+        private bool TickContainsAllTarget(int tickNumber)
+        {
+            return _tableData
+                .Where(row => row.TickNumber == tickNumber)
+                .Any(row => IsAllTarget(row.Target1) || IsAllTarget(row.Target2));
+        }
+
+        private int CountOccupiedSlotsInTick(int tickNumber)
+        {
+            int count = 0;
+
+            foreach (var row in _tableData.Where(row => row.TickNumber == tickNumber))
+            {
+                if (IsCommandSlotOccupied(row.Target1, row.Action1))
+                    count++;
+
+                if (IsCommandSlotOccupied(row.Target2, row.Action2))
+                    count++;
+            }
+
+            return count;
+        }
+
+        private int CountRowsInTick(int tickNumber)
+        {
+            return _tableData.Count(row => row.TickNumber == tickNumber);
+        }
+
+        private CommandRow CreateNewTickRow()
+        {
+            var row = new CommandRow { TickNumber = GetNextTickNumber() };
+            _tableData.Add(row);
+            _selectedRowIndex = _tableData.Count - 1;
+            return row;
+        }
+
+        private CommandRow GetOrCreateAdditionalRowForTick(int tickNumber)
+        {
+            if (!TickContainsAllTarget(tickNumber) &&
+                CountOccupiedSlotsInTick(tickNumber) < _droneTargetCount &&
+                CountRowsInTick(tickNumber) < MaxRowsPerTick)
+            {
+                var newRow = new CommandRow { TickNumber = tickNumber };
+                int insertIndex = _tableData.FindLastIndex(row => row.TickNumber == tickNumber) + 1;
+                _tableData.Insert(insertIndex, newRow);
+                _selectedRowIndex = insertIndex;
+                return newRow;
+            }
+
+            return CreateNewTickRow();
+        }
+
+        private CommandRow FindRowWithFreeTargetSlotInTick(int tickNumber)
+        {
+            foreach (var row in _tableData.Where(row => row.TickNumber == tickNumber))
+            {
+                if (string.IsNullOrWhiteSpace(row.Target1))
+                    return row;
+
+                if (!IsAllTarget(row.Target1) && string.IsNullOrWhiteSpace(row.Target2))
+                    return row;
+            }
+
+            return GetOrCreateAdditionalRowForTick(tickNumber);
+        }
+
+        private CommandRow FindRowWithFreeActionSlotInTick(int tickNumber)
+        {
+            foreach (var row in _tableData.Where(row => row.TickNumber == tickNumber))
+            {
+                if (string.IsNullOrWhiteSpace(row.Action1))
+                    return row;
+
+                if (!IsAllTarget(row.Target1) && string.IsNullOrWhiteSpace(row.Action2))
+                    return row;
+            }
+
+            return GetOrCreateAdditionalRowForTick(tickNumber);
+        }
+
+        private void SelectRow(CommandRow row)
+        {
+            int index = _tableData.IndexOf(row);
+            if (index >= 0)
+            {
+                _selectedRowIndex = index;
+            }
+        }
+
+        private void SetSequentialTickNumbersIfMissing(List<CommandRow> rows)
+        {
+            bool hasTickNumbers = rows.Any(row => row.TickNumber > 0);
+
+            if (hasTickNumbers)
+                return;
+
+            for (int i = 0; i < rows.Count; i++)
+            {
+                rows[i].TickNumber = i + 1;
+            }
+        }
+
         private TextButton CreateTestAlgorithmButton(
             string text,
             Func<List<CommandRow>> createRows)
@@ -722,6 +898,7 @@ namespace DroneSimulator
         private void LoadTestAlgorithm(List<CommandRow> rows)
         {
             CloseMessage();
+            SetSequentialTickNumbersIfMissing(rows);
             _tableData = rows;
             _selectedRowIndex = 0;
             RefreshTableUI();
@@ -944,7 +1121,7 @@ namespace DroneSimulator
 
         private void AddEmptyRow()
         {
-            _tableData.Add(new CommandRow());
+            _tableData.Add(new CommandRow { TickNumber = GetNextTickNumber() });
             RefreshTableUI();
         }
 
@@ -967,6 +1144,7 @@ namespace DroneSimulator
         private void ClearTable()
         {
             _tableData.Clear();
+            _selectedRowIndex = 0;
             RefreshTableUI();
         }
 
@@ -1001,7 +1179,7 @@ namespace DroneSimulator
                 IBrush numBg = isSelected ? _selectedRowBrush : new SolidBrush(Color.FromNonPremultiplied(240, 240, 240, 255));
 
                 // Номер строки (тоже кликабельный)
-                var numLabel = new Label { Text = rowNum.ToString(), Margin = new Myra.Graphics2D.Thickness(5), TextColor = Color.Black };
+                var numLabel = new Label { Text = rowData.TickNumber.ToString(), Margin = new Myra.Graphics2D.Thickness(5), TextColor = Color.Black };
                 var numPanel = new Panel { GridColumn = 0, GridRow = rowNum, Background = numBg };
                 numPanel.Widgets.Add(numLabel);
                 int localIndex = i; // Локальная копия индекса для замыкания
@@ -1039,35 +1217,43 @@ namespace DroneSimulator
         // Метод добавления Адресата (вызывается кнопками снизу)
         private void InsertTarget(string target)
         {
-            if (_tableData.Count == 0) AddEmptyRow();
+            if (_tableData.Count == 0)
+                AddEmptyRow();
 
-            // Записываем в выделенную строку
             var activeRow = _tableData[_selectedRowIndex];
+            CommandRow targetRow = activeRow;
 
-            if (string.IsNullOrEmpty(activeRow.Target1))
+            if (string.IsNullOrWhiteSpace(activeRow.Target1))
             {
                 activeRow.Target1 = target;
             }
-            // Если первый адресат "Все", то второй адресат заблокирован. Создаем новую строку!
             else if (IsAllTarget(activeRow.Target1))
             {
-                var newRow = new CommandRow { Target1 = target };
-                _tableData.Add(newRow);
-                _selectedRowIndex = _tableData.Count - 1; // Автоматически выделяем новую строку
+                targetRow = CreateNewTickRow();
+                targetRow.Target1 = target;
             }
-            else if (string.IsNullOrEmpty(activeRow.Target2))
+            else if (string.IsNullOrWhiteSpace(activeRow.Target2))
             {
                 activeRow.Target2 = target;
             }
             else
             {
-                // Если строка полностью заполнена, создаем новую строку
-                var newRow = new CommandRow { Target1 = target };
-                _tableData.Add(newRow);
-                _selectedRowIndex = _tableData.Count - 1;
+                targetRow = FindRowWithFreeTargetSlotInTick(activeRow.TickNumber);
+
+                if (string.IsNullOrWhiteSpace(targetRow.Target1))
+                {
+                    targetRow.Target1 = target;
+                }
+                else
+                {
+                    targetRow.Target2 = target;
+                }
             }
+
+            SelectRow(targetRow);
             RefreshTableUI();
         }
+
         private IBrush CreateRoundedBrush(Microsoft.Xna.Framework.Graphics.GraphicsDevice device, int radius, Color color)
         {
             int sliceMargin = radius + 1;
@@ -1146,32 +1332,40 @@ namespace DroneSimulator
         }
         private void InsertAction(string action)
         {
-            if (_tableData.Count == 0) AddEmptyRow();
+            if (_tableData.Count == 0)
+                AddEmptyRow();
 
             var activeRow = _tableData[_selectedRowIndex];
+            CommandRow targetRow = activeRow;
 
-            if (string.IsNullOrEmpty(activeRow.Action1))
+            if (string.IsNullOrWhiteSpace(activeRow.Action1))
             {
                 activeRow.Action1 = action;
             }
-            // Если первый адресат "Все", то второе действие заблокировано. Создаем новую строку!
             else if (IsAllTarget(activeRow.Target1))
             {
-                var newRow = new CommandRow { Action1 = action };
-                _tableData.Add(newRow);
-                _selectedRowIndex = _tableData.Count - 1;
+                targetRow = CreateNewTickRow();
+                targetRow.Action1 = action;
             }
-            else if (string.IsNullOrEmpty(activeRow.Action2))
+            else if (string.IsNullOrWhiteSpace(activeRow.Action2))
             {
                 activeRow.Action2 = action;
             }
             else
             {
-                // Создаем новую строку
-                var newRow = new CommandRow { Action1 = action };
-                _tableData.Add(newRow);
-                _selectedRowIndex = _tableData.Count - 1;
+                targetRow = FindRowWithFreeActionSlotInTick(activeRow.TickNumber);
+
+                if (string.IsNullOrWhiteSpace(targetRow.Action1))
+                {
+                    targetRow.Action1 = action;
+                }
+                else
+                {
+                    targetRow.Action2 = action;
+                }
             }
+
+            SelectRow(targetRow);
             RefreshTableUI();
         }
 

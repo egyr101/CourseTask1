@@ -8,16 +8,33 @@ namespace DroneSimulator
     {
         public static IEnumerable<List<DroneCommand>> Parse(IEnumerable<CommandRow> rows)
         {
+            var currentTick = new List<DroneCommand>();
+            int? currentTickNumber = null;
+            int fallbackTickNumber = 1;
+
             foreach (var row in rows)
             {
-                var tick = new List<DroneCommand>();
+                int tickNumber = row.TickNumber > 0
+                    ? row.TickNumber
+                    : fallbackTickNumber;
 
-                TryAddCommand(tick, row.Target1, row.Action1, row.Argument1);
-                TryAddCommand(tick, row.Target2, row.Action2, row.Argument2);
+                if (currentTickNumber.HasValue && tickNumber != currentTickNumber.Value)
+                {
+                    if (currentTick.Count > 0)
+                        yield return currentTick;
 
-                if (tick.Count > 0)
-                    yield return tick;
+                    currentTick = new List<DroneCommand>();
+                }
+
+                TryAddCommand(currentTick, row.Target1, row.Action1, row.Argument1);
+                TryAddCommand(currentTick, row.Target2, row.Action2, row.Argument2);
+
+                currentTickNumber = tickNumber;
+                fallbackTickNumber++;
             }
+
+            if (currentTick.Count > 0)
+                yield return currentTick;
         }
 
         private static void TryAddCommand(
