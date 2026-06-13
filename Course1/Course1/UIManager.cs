@@ -35,6 +35,7 @@ namespace DroneSimulator
         public event Action? AlgorithmResultClosed;
         public event Action<float>? DroneSpeedChanged;
         public event Action<GameLanguage>? LanguageChanged;
+        public event Action? LoadMapRequested;
 
         private Desktop _desktop;
         private Grid _tableGrid;
@@ -50,11 +51,18 @@ namespace DroneSimulator
         private Label _messageCloseLabel;
         private bool _shouldRollbackMapWhenMessageClosed;
 
+        private Panel _filePanel;
         private Panel _testAlgorithmsPanel;
         private Panel _settingsPanel;
 
         private GameLanguage _language = GameLanguage.Russian;
         private float _speedMultiplier = 1f;
+
+        private TextButton _fileButton;
+        private TextButton _loadMapButton;
+        private TextButton _openMapEditorButton;
+        private TextButton _saveAlgorithmButton;
+        private TextButton _loadAlgorithmButton;
 
         private TextButton _loadTestsButton;
         private TextButton _runButton;
@@ -111,15 +119,23 @@ namespace DroneSimulator
             _btnDark = CreateRoundedBrush(device, 6, new Color(45, 45, 45));
         }
 
-        public UIManager(MapRenderer mapRenderer)
+        public GameLanguage CurrentLanguage => _language;
+        public float CurrentSpeedMultiplier => _speedMultiplier;
+
+        public UIManager(MapRenderer mapRenderer, GameLanguage language = GameLanguage.Russian, float speedMultiplier = 1f)
         {
             InitBrushes();
             _desktop = new Desktop();
             _droneTargetCount = mapRenderer.Drones.Count;
+            _language = language;
+            _speedMultiplier = speedMultiplier;
 
             var rootContainer = new VerticalStackPanel { Background = _bgGreen };
 
             rootContainer.Widgets.Add(CreateTopMenu());
+
+            _filePanel = CreateFilePanel();
+            rootContainer.Widgets.Add(_filePanel);
 
             _testAlgorithmsPanel = CreateTestAlgorithmsPanel();
             rootContainer.Widgets.Add(_testAlgorithmsPanel);
@@ -133,6 +149,8 @@ namespace DroneSimulator
             rootContainer.Widgets.Add(CreateMainContent(mapRenderer));
 
             _desktop.Root = rootContainer;
+
+            UpdateLanguageTexts();
 
             // Добавляем первую пустую строку при запуске
             AddEmptyRow();
@@ -200,16 +218,25 @@ namespace DroneSimulator
             return panel;
         }
 
-        public void ShowError(string message)
+        public void ShowError(string message, bool includeRestoreText = true)
         {
             _shouldRollbackMapWhenMessageClosed = false;
             _messagePanel.Background = new SolidBrush(new Color(170, 55, 45));
             _messageTitleLabel.Text = _language == GameLanguage.Russian
-                ? "Ошибка выполнения алгоритма"
-                : "Algorithm execution error";
-            _messageTextLabel.Text = _language == GameLanguage.Russian
-                ? message + " Карта возвращена в начальное состояние."
-                : message + " The map has been restored to the initial state.";
+                ? "Ошибка"
+                : "Error";
+
+            if (includeRestoreText)
+            {
+                _messageTextLabel.Text = _language == GameLanguage.Russian
+                    ? message + " Карта возвращена в начальное состояние."
+                    : message + " The map has been restored to the initial state.";
+            }
+            else
+            {
+                _messageTextLabel.Text = message;
+            }
+
             _messagePanel.Visible = true;
         }
 
@@ -442,6 +469,65 @@ namespace DroneSimulator
             button.Padding = new Myra.Graphics2D.Thickness(12, 6);
         }
 
+        private void HideDropDownPanels()
+        {
+            if (_filePanel != null)
+                _filePanel.Visible = false;
+
+            if (_testAlgorithmsPanel != null)
+                _testAlgorithmsPanel.Visible = false;
+
+            if (_settingsPanel != null)
+                _settingsPanel.Visible = false;
+        }
+
+        private Panel CreateFilePanel()
+        {
+            var panel = new Panel
+            {
+                Background = new SolidBrush(new Color(210, 235, 220)),
+                Margin = new Myra.Graphics2D.Thickness(10, 6),
+                Visible = false
+            };
+
+            var content = new HorizontalStackPanel
+            {
+                Spacing = 8,
+                Padding = new Myra.Graphics2D.Thickness(8)
+            };
+
+            _loadMapButton = CreateFileMenuButton("Загрузить карту", () =>
+            {
+                HideDropDownPanels();
+                LoadMapRequested?.Invoke();
+            });
+
+            _openMapEditorButton = CreateFileMenuButton("Открыть редактор карт", () => { });
+            _saveAlgorithmButton = CreateFileMenuButton("Сохранить алгоритм", () => { });
+            _loadAlgorithmButton = CreateFileMenuButton("Загрузить алгоритм", () => { });
+
+            content.Widgets.Add(_loadMapButton);
+            content.Widgets.Add(_openMapEditorButton);
+            content.Widgets.Add(_saveAlgorithmButton);
+            content.Widgets.Add(_loadAlgorithmButton);
+
+            panel.Widgets.Add(content);
+            return panel;
+        }
+
+        private TextButton CreateFileMenuButton(string text, Action onClick)
+        {
+            var button = new TextButton
+            {
+                Text = text,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+
+            StyleButton(button, _btnDark, 34);
+            button.TouchDown += (s, a) => onClick();
+            return button;
+        }
+
         private Widget CreateTopMenu()
         {
             var menuPanel = new HorizontalStackPanel
@@ -451,11 +537,21 @@ namespace DroneSimulator
                 Padding = new Myra.Graphics2D.Thickness(10, 5)
             };
 
+            _fileButton = CreateTopMenuButton("Файл");
+            _fileButton.TouchDown += (s, a) =>
+            {
+                bool shouldShow = !_filePanel.Visible;
+                HideDropDownPanels();
+                _filePanel.Visible = shouldShow;
+            };
+            menuPanel.Widgets.Add(_fileButton);
+
             _loadTestsButton = CreateTopMenuButton("Загрузить тестовые алгоритмы");
             _loadTestsButton.TouchDown += (s, a) =>
             {
-                _testAlgorithmsPanel.Visible = !_testAlgorithmsPanel.Visible;
-                _settingsPanel.Visible = false;
+                bool shouldShow = !_testAlgorithmsPanel.Visible;
+                HideDropDownPanels();
+                _testAlgorithmsPanel.Visible = shouldShow;
             };
             menuPanel.Widgets.Add(_loadTestsButton);
 
@@ -475,8 +571,9 @@ namespace DroneSimulator
             _settingsButton = CreateTopMenuButton("Настройки");
             _settingsButton.TouchDown += (s, a) =>
             {
-                _settingsPanel.Visible = !_settingsPanel.Visible;
-                _testAlgorithmsPanel.Visible = false;
+                bool shouldShow = !_settingsPanel.Visible;
+                HideDropDownPanels();
+                _settingsPanel.Visible = shouldShow;
             };
             menuPanel.Widgets.Add(_settingsButton);
 
@@ -625,11 +722,17 @@ namespace DroneSimulator
         {
             if (_language == GameLanguage.Russian)
             {
+                _fileButton.Text = "Файл";
                 _loadTestsButton.Text = "Загрузить тестовые алгоритмы";
                 _runButton.Text = "Выполнить";
                 _helpButton.Text = "Помощь";
                 _settingsButton.Text = "Настройки";
                 _messageCloseLabel.Text = "Закрыть";
+
+                _loadMapButton.Text = "Загрузить карту";
+                _openMapEditorButton.Text = "Открыть редактор карт";
+                _saveAlgorithmButton.Text = "Сохранить алгоритм";
+                _loadAlgorithmButton.Text = "Загрузить алгоритм";
 
                 _successTestButton.Text = "Успешный алгоритм";
                 _collisionTestButton.Text = "Столкновение дронов";
@@ -645,11 +748,17 @@ namespace DroneSimulator
             }
             else
             {
+                _fileButton.Text = "File";
                 _loadTestsButton.Text = "Load test algorithms";
                 _runButton.Text = "Run";
                 _helpButton.Text = "Help";
                 _settingsButton.Text = "Settings";
                 _messageCloseLabel.Text = "Close";
+
+                _loadMapButton.Text = "Load map";
+                _openMapEditorButton.Text = "Open map editor";
+                _saveAlgorithmButton.Text = "Save algorithm";
+                _loadAlgorithmButton.Text = "Load algorithm";
 
                 _successTestButton.Text = "Successful algorithm";
                 _collisionTestButton.Text = "Drone collision";

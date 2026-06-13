@@ -18,6 +18,6 @@
 
   <ItemGroup>
     <None Include="Content\*.png" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="level_config.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="levels\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

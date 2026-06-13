@@ -22,14 +22,30 @@ namespace DroneSimulator
 
     public static class LevelConfigLoader
     {
-        private const string ConfigFileName = "level_config.json";
+        public const string LevelsFolderName = "levels";
+        public const string MainLevelFileName = "level_main.json";
 
-        public static LevelConfig LoadFromOutputDirectory()
+        public static string LevelsDirectory =>
+            Path.Combine(AppContext.BaseDirectory, LevelsFolderName);
+
+        public static string MainLevelPath =>
+            Path.Combine(LevelsDirectory, MainLevelFileName);
+
+        public static LevelConfig LoadMainLevel()
         {
-            string path = Path.Combine(AppContext.BaseDirectory, ConfigFileName);
+            return LoadFromFile(MainLevelPath);
+        }
+
+        public static LevelConfig LoadFromFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                throw new InvalidOperationException("Путь к файлу карты не указан.");
 
             if (!File.Exists(path))
-                throw new FileNotFoundException($"Файл конфигурации уровня не найден: {path}");
+                throw new FileNotFoundException($"Файл карты не найден: {path}");
+
+            if (!string.Equals(Path.GetExtension(path), ".json", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Файл карты должен иметь расширение .json.");
 
             string json = File.ReadAllText(path);
 
@@ -38,15 +54,53 @@ namespace DroneSimulator
                 PropertyNameCaseInsensitive = true
             };
 
-            var config = JsonSerializer.Deserialize<LevelConfig>(json, options);
+            LevelConfig? config;
 
+            try
+            {
+                config = JsonSerializer.Deserialize<LevelConfig>(json, options);
+            }
+            catch (JsonException ex)
+            {
+                throw new InvalidOperationException($"Файл карты содержит некорректный JSON: {ex.Message}");
+            }
+
+            Validate(config);
+            return config!;
+        }
+
+        private static void Validate(LevelConfig? config)
+        {
             if (config == null)
-                throw new InvalidOperationException("Не удалось прочитать конфигурацию уровня.");
+                throw new InvalidOperationException("Не удалось прочитать файл карты.");
+
+            if (config.Drones == null)
+                throw new InvalidOperationException("В файле карты отсутствует раздел \"drones\".");
+
+            if (config.Weeds == null)
+                throw new InvalidOperationException("В файле карты отсутствует раздел \"weeds\".");
 
             if (config.Drones.Count == 0)
-                throw new InvalidOperationException("В конфигурации уровня должен быть хотя бы один дрон.");
+                throw new InvalidOperationException("В файле карты должен быть хотя бы один дрон.");
 
-            return config;
+            EnsureNoDuplicatePoints(config.Drones, "drones");
+            EnsureNoDuplicatePoints(config.Weeds, "weeds");
+        }
+
+        private static void EnsureNoDuplicatePoints(List<GridPointConfig> points, string sectionName)
+        {
+            var used = new HashSet<string>();
+
+            foreach (var point in points)
+            {
+                string key = $"{point.X}:{point.Y}";
+
+                if (!used.Add(key))
+                {
+                    throw new InvalidOperationException(
+                        $"В разделе \"{sectionName}\" повторяется позиция ({point.X}, {point.Y}).");
+                }
+            }
         }
     }
 }

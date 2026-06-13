@@ -3,7 +3,9 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using Myra;
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace DroneSimulator
 {
@@ -13,6 +15,7 @@ namespace DroneSimulator
         private MapRenderer _mapRenderer;
         private UIManager _uiManager;
         private DroneCommandExecutor _commandExecutor;
+        private Texture2D _droneTexture;
 
         public Game1()
         {
@@ -38,13 +41,13 @@ namespace DroneSimulator
 
         private static Color GetDroneTint(int index)
         {
-            // Все дроны используют одну и ту же модель без цветового отличия.
-            // Номер дрона рисуется поверх модели на карте.
             return Color.White;
         }
 
         private void BuildLevelFromConfig(LevelConfig config, Texture2D droneTexture)
         {
+            ValidateConfigForCurrentMap(config);
+
             _mapRenderer.Drones.Clear();
             _mapRenderer.WeedField.Clear();
 
@@ -66,25 +69,45 @@ namespace DroneSimulator
             }
         }
 
-        protected override void Initialize()
+        private void ValidateConfigForCurrentMap(LevelConfig config)
         {
-            base.Initialize();
+            var dronePositions = new HashSet<Point>();
+            var weedPositions = new HashSet<Point>();
+
+            foreach (var drone in config.Drones)
+            {
+                ValidatePointInsideMap(drone.X, drone.Y, "дрона");
+                dronePositions.Add(new Point(drone.X, drone.Y));
+            }
+
+            foreach (var weed in config.Weeds)
+            {
+                ValidatePointInsideMap(weed.X, weed.Y, "сорняка");
+                var point = new Point(weed.X, weed.Y);
+                weedPositions.Add(point);
+
+                if (dronePositions.Contains(point))
+                {
+                    throw new InvalidOperationException(
+                        $"Сорняк не может находиться в стартовой клетке дрона: ({weed.X}, {weed.Y}).");
+                }
+            }
         }
 
-        protected override void LoadContent()
+        private void ValidatePointInsideMap(int x, int y, string objectName)
         {
-            MyraEnvironment.Game = this;
+            if (x < 0 || x >= _mapRenderer.GridWidth || y < 0 || y >= _mapRenderer.GridHeight)
+            {
+                throw new InvalidOperationException(
+                    $"Позиция {objectName} ({x}, {y}) находится за границами карты.");
+            }
+        }
 
-            _mapRenderer = new MapRenderer(GraphicsDevice);
-
-            Texture2D droneTexture = LoadTextureFromContent("red_drone.png");
-
-            LevelConfig levelConfig = LevelConfigLoader.LoadFromOutputDirectory();
-            BuildLevelFromConfig(levelConfig, droneTexture);
-
+        private void CreateCommandExecutorAndUi(GameLanguage language = GameLanguage.Russian, float speed = 1f)
+        {
             _commandExecutor = new DroneCommandExecutor(_mapRenderer);
+            _uiManager = new UIManager(_mapRenderer, language, speed);
 
-            _uiManager = new UIManager(_mapRenderer);
             _commandExecutor.ErrorOccurred += error =>
             {
                 _uiManager.ShowError(error);
@@ -96,10 +119,15 @@ namespace DroneSimulator
                 _uiManager.ShowAlgorithmResult(result);
                 _uiManager.SetRunButtonEnabled(true);
             };
+
             _commandExecutor.ChargesChanged += charges => _uiManager.UpdateDroneCharges(charges);
-            _uiManager.DroneSpeedChanged += speed => Drone.MoveSpeedMultiplier = speed;
+            _uiManager.DroneSpeedChanged += speedValue => Drone.MoveSpeedMultiplier = speedValue;
             _uiManager.AlgorithmResultClosed += () => _commandExecutor.RestoreMapToInitialState();
+            _uiManager.LoadMapRequested += LoadMapFromUserFile;
+
             _uiManager.UpdateDroneCharges(_commandExecutor.GetChargeInfo());
+            Drone.MoveSpeedMultiplier = speed;
+
             _uiManager.RunRequested += rows =>
             {
                 if (_commandExecutor.IsRunning)
@@ -115,6 +143,64 @@ namespace DroneSimulator
                     _uiManager.SetRunButtonEnabled(true);
                 }
             };
+        }
+
+        private void LoadMapFromUserFile()
+        {
+            if (_commandExecutor != null && _commandExecutor.IsRunning)
+            {
+                _uiManager.ShowError("Нельзя загружать карту во время выполнения алгоритма.", includeRestoreText: false);
+                return;
+            }
+
+            string levelsDirectory = LevelConfigLoader.LevelsDirectory;
+            Directory.CreateDirectory(levelsDirectory);
+
+            using var dialog = new System.Windows.Forms.OpenFileDialog
+            {
+                Title = "Загрузить карту",
+                InitialDirectory = levelsDirectory,
+                Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+                CheckFileExists = true,
+                Multiselect = false
+            };
+
+            var result = dialog.ShowDialog();
+
+            if (result != System.Windows.Forms.DialogResult.OK)
+                return;
+
+            try
+            {
+                GameLanguage currentLanguage = _uiManager.CurrentLanguage;
+                float currentSpeed = _uiManager.CurrentSpeedMultiplier;
+
+                LevelConfig config = LevelConfigLoader.LoadFromFile(dialog.FileName);
+                BuildLevelFromConfig(config, _droneTexture);
+                CreateCommandExecutorAndUi(currentLanguage, currentSpeed);
+            }
+            catch (Exception ex)
+            {
+                _uiManager.ShowError(ex.Message, includeRestoreText: false);
+            }
+        }
+
+        protected override void Initialize()
+        {
+            base.Initialize();
+        }
+
+        protected override void LoadContent()
+        {
+            MyraEnvironment.Game = this;
+
+            _mapRenderer = new MapRenderer(GraphicsDevice);
+            _droneTexture = LoadTextureFromContent("red_drone.png");
+
+            LevelConfig levelConfig = LevelConfigLoader.LoadMainLevel();
+            BuildLevelFromConfig(levelConfig, _droneTexture);
+
+            CreateCommandExecutorAndUi();
         }
 
         protected override void Update(GameTime gameTime)
