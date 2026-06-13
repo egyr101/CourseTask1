@@ -125,6 +125,8 @@ namespace DroneSimulator
             _uiManager.AlgorithmResultClosed += () => _commandExecutor.RestoreMapToInitialState();
             _uiManager.LoadMapRequested += LoadMapFromUserFile;
             _uiManager.MapEditorSaveRequested += SaveMapFromEditor;
+            _uiManager.AlgorithmSaveRequested += SaveAlgorithmFromTable;
+            _uiManager.AlgorithmLoadRequested += LoadAlgorithmFromUserFile;
 
             _uiManager.UpdateDroneCharges(_commandExecutor.GetChargeInfo());
             Drone.MoveSpeedMultiplier = speed;
@@ -144,6 +146,77 @@ namespace DroneSimulator
                     _uiManager.SetRunButtonEnabled(true);
                 }
             };
+        }
+
+        private void SaveAlgorithmFromTable(string algorithmName, IReadOnlyList<CommandRow> rows)
+        {
+            if (_commandExecutor != null && _commandExecutor.IsRunning)
+            {
+                _uiManager.ShowAlgorithmSaveResult(
+                    "Нельзя сохранять алгоритм во время выполнения.",
+                    success: false);
+                return;
+            }
+
+            try
+            {
+                string savedPath = AlgorithmConfigLoader.SaveToAlgorithmsFolder(
+                    algorithmName,
+                    rows,
+                    _mapRenderer.Drones.Count);
+
+                _uiManager.ShowAlgorithmSaveResult(
+                    $"Алгоритм сохранён: {Path.GetFileName(savedPath)}",
+                    success: true);
+            }
+            catch (Exception ex)
+            {
+                _uiManager.ShowAlgorithmSaveResult(ex.Message, success: false);
+            }
+        }
+
+        private void LoadAlgorithmFromUserFile()
+        {
+            if (_commandExecutor != null && _commandExecutor.IsRunning)
+            {
+                _uiManager.ShowError("Нельзя загружать алгоритм во время выполнения.", includeRestoreText: false);
+                return;
+            }
+
+            string algorithmsDirectory = AlgorithmConfigLoader.AlgorithmsDirectory;
+            Directory.CreateDirectory(algorithmsDirectory);
+
+            using var dialog = new System.Windows.Forms.OpenFileDialog
+            {
+                Title = "Загрузить алгоритм",
+                InitialDirectory = algorithmsDirectory,
+                Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+                CheckFileExists = true,
+                Multiselect = false
+            };
+
+            var result = dialog.ShowDialog();
+
+            if (result != System.Windows.Forms.DialogResult.OK)
+                return;
+
+            try
+            {
+                AlgorithmConfig config = AlgorithmConfigLoader.LoadFromFile(
+                    dialog.FileName,
+                    _mapRenderer.Drones.Count);
+
+                List<CommandRow> rows = AlgorithmConfigLoader.ToCommandRows(
+                    config,
+                    _uiManager.CurrentLanguage,
+                    _mapRenderer.Drones.Count);
+
+                _uiManager.LoadAlgorithmRows(rows);
+            }
+            catch (Exception ex)
+            {
+                _uiManager.ShowError(ex.Message, includeRestoreText: false);
+            }
         }
 
         private void LoadMapFromUserFile()

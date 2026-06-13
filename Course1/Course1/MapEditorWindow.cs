@@ -16,6 +16,8 @@ namespace DroneSimulator
     {
         private const int MaxDrones = 10;
         private const int EditorCellSize = 28;
+        private const int ControlPanelWidth = 420;
+        private const int ControlTextWrapLength = 44;
 
         public event Action<string, LevelConfig>? SaveRequested;
         public event Action? CloseRequested;
@@ -101,7 +103,8 @@ namespace DroneSimulator
         {
             var root = new VerticalStackPanel
             {
-                Spacing = 8
+                Spacing = 8,
+                HorizontalAlignment = HorizontalAlignment.Center
             };
 
             _titleLabel = new Label
@@ -176,7 +179,7 @@ namespace DroneSimulator
         {
             var panel = new VerticalStackPanel
             {
-                Width = 370,
+                Width = ControlPanelWidth,
                 Spacing = 8,
                 Padding = new Thickness(8),
                 Background = new SolidBrush(new Color(215, 238, 222))
@@ -197,9 +200,9 @@ namespace DroneSimulator
                 HorizontalAlignment = HorizontalAlignment.Stretch
             };
 
-            _selectedCellLabel = new Label { TextColor = Color.Black };
-            _objectsCountLabel = new Label { TextColor = Color.Black };
-            _statusLabel = new Label { TextColor = Color.Black };
+            _selectedCellLabel = CreateControlLabel(string.Empty);
+            _objectsCountLabel = CreateControlLabel(string.Empty);
+            _statusLabel = CreateControlLabel(string.Empty);
 
             panel.Widgets.Add(_mapNameLabel);
             panel.Widgets.Add(_mapNameTextBox);
@@ -216,30 +219,9 @@ namespace DroneSimulator
             panel.Widgets.Add(_removeDroneButton);
             panel.Widgets.Add(_removeWeedButton);
 
-            panel.Widgets.Add(new Label
-            {
-                Text = "Ограничения:",
-                TextColor = Color.Black,
-                Margin = new Thickness(0, 8, 0, 0)
-            });
-
-            panel.Widgets.Add(new Label
-            {
-                Text = "- максимум 10 дронов;",
-                TextColor = Color.Black
-            });
-
-            panel.Widgets.Add(new Label
-            {
-                Text = "- дрон и сорняк не могут стоять",
-                TextColor = Color.Black
-            });
-
-            panel.Widgets.Add(new Label
-            {
-                Text = "  в одной клетке.",
-                TextColor = Color.Black
-            });
+            panel.Widgets.Add(CreateControlLabel("Ограничения:", topMargin: 8));
+            panel.Widgets.Add(CreateControlLabel("- максимум 10 дронов;"));
+            panel.Widgets.Add(CreateControlLabel("- дрон и сорняк не могут стоять в одной клетке."));
 
             panel.Widgets.Add(_statusLabel);
 
@@ -259,12 +241,23 @@ namespace DroneSimulator
             return panel;
         }
 
+        private Label CreateControlLabel(string text, int topMargin = 0)
+        {
+            return new Label
+            {
+                Text = WrapText(text, ControlTextWrapLength),
+                TextColor = Color.Black,
+                Width = ControlPanelWidth - 24,
+                Margin = new Thickness(0, topMargin, 0, 0)
+            };
+        }
+
         private TextButton CreateButton(string text, Action action)
         {
             var button = new TextButton
             {
                 Text = text,
-                Height = 34,
+                Height = 40,
                 Padding = new Thickness(10, 5),
                 TextColor = Color.White,
                 Background = _buttonBrush,
@@ -377,7 +370,7 @@ namespace DroneSimulator
 
         private void SetStatus(string message, bool isError)
         {
-            _statusLabel.Text = WrapText(message, 34);
+            _statusLabel.Text = WrapText(message, ControlTextWrapLength);
             _statusLabel.TextColor = isError
                 ? new Color(170, 55, 45)
                 : Color.Black;

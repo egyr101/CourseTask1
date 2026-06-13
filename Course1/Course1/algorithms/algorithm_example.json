@@ -1,0 +1,21 @@
+{
+  "numberDronesOnMap": 2,
+  "ticks": [
+    {
+      "commands": [
+        {
+          "target": "drone",
+          "droneNumber": 1,
+          "action": "attack",
+          "repeat": 1
+        },
+        {
+          "target": "drone",
+          "droneNumber": 2,
+          "action": "attack",
+          "repeat": 1
+        }
+      ]
+    }
+  ]
+}

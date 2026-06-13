@@ -5,6 +5,7 @@ using Myra.Graphics2D.Brushes;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
 
 namespace DroneSimulator
 {
@@ -37,6 +38,8 @@ namespace DroneSimulator
         public event Action<GameLanguage>? LanguageChanged;
         public event Action? LoadMapRequested;
         public event Action<string, LevelConfig>? MapEditorSaveRequested;
+        public event Action<string, IReadOnlyList<CommandRow>>? AlgorithmSaveRequested;
+        public event Action? AlgorithmLoadRequested;
 
         private Desktop _desktop;
         private Grid _tableGrid;
@@ -55,8 +58,12 @@ namespace DroneSimulator
         private Panel _filePanel;
         private Panel _testAlgorithmsPanel;
         private Panel _settingsPanel;
+        private Panel _saveAlgorithmPanel;
+        private TextBox _algorithmNameTextBox;
+        private Label _algorithmSaveStatusLabel;
         private MapEditorWindow _mapEditorWindow;
         private MapRenderer _mapRendererForEditor;
+        private Widget _mainContent;
 
         private GameLanguage _language = GameLanguage.Russian;
         private float _speedMultiplier = 1f;
@@ -147,13 +154,17 @@ namespace DroneSimulator
             _settingsPanel = CreateSettingsPanel();
             rootContainer.Widgets.Add(_settingsPanel);
 
+            _saveAlgorithmPanel = CreateSaveAlgorithmPanel();
+            rootContainer.Widgets.Add(_saveAlgorithmPanel);
+
             _messagePanel = CreateMessagePanel();
             rootContainer.Widgets.Add(_messagePanel);
 
             _mapEditorWindow = CreateMapEditorWindow(mapRenderer);
             rootContainer.Widgets.Add(_mapEditorWindow);
 
-            rootContainer.Widgets.Add(CreateMainContent(mapRenderer));
+            _mainContent = CreateMainContent(mapRenderer);
+            rootContainer.Widgets.Add(_mainContent);
 
             _desktop.Root = rootContainer;
 
@@ -489,6 +500,18 @@ namespace DroneSimulator
             button.Padding = new Myra.Graphics2D.Thickness(12, 6);
         }
 
+        private void ShowMainContent()
+        {
+            if (_mainContent != null)
+                _mainContent.Visible = true;
+        }
+
+        private void HideMainContent()
+        {
+            if (_mainContent != null)
+                _mainContent.Visible = false;
+        }
+
         private void HideDropDownPanels()
         {
             if (_filePanel != null)
@@ -499,6 +522,9 @@ namespace DroneSimulator
 
             if (_settingsPanel != null)
                 _settingsPanel.Visible = false;
+
+            if (_saveAlgorithmPanel != null)
+                _saveAlgorithmPanel.Visible = false;
         }
 
         private void CloseAllTopPanels()
@@ -507,6 +533,8 @@ namespace DroneSimulator
 
             if (_mapEditorWindow != null)
                 _mapEditorWindow.Visible = false;
+
+            ShowMainContent();
 
             if (_messagePanel != null && _messagePanel.Visible)
                 CloseMessage();
@@ -518,6 +546,8 @@ namespace DroneSimulator
 
             if (_mapEditorWindow != null)
                 _mapEditorWindow.Visible = false;
+
+            ShowMainContent();
 
             if (_messagePanel != null && _messagePanel.Visible && _shouldRollbackMapWhenMessageClosed)
                 CloseMessage();
@@ -548,10 +578,28 @@ namespace DroneSimulator
             {
                 CloseAllTopPanels();
                 _mapEditorWindow.ResetFromMap(_mapRendererForEditor);
+                HideMainContent();
                 _mapEditorWindow.Visible = true;
             });
-            _saveAlgorithmButton = CreateFileMenuButton("Сохранить алгоритм", () => { });
-            _loadAlgorithmButton = CreateFileMenuButton("Загрузить алгоритм", () => { });
+            _saveAlgorithmButton = CreateFileMenuButton("Сохранить алгоритм", () =>
+            {
+                bool shouldShow = !_saveAlgorithmPanel.Visible;
+                CloseAllTopPanels();
+
+                if (shouldShow)
+                {
+                    _algorithmSaveStatusLabel.Text = string.Empty;
+                    _algorithmNameTextBox.Text = string.Empty;
+                }
+
+                _saveAlgorithmPanel.Visible = shouldShow;
+            });
+
+            _loadAlgorithmButton = CreateFileMenuButton("Загрузить алгоритм", () =>
+            {
+                CloseAllTopPanels();
+                AlgorithmLoadRequested?.Invoke();
+            });
 
             content.Widgets.Add(_loadMapButton);
             content.Widgets.Add(_openMapEditorButton);
@@ -580,7 +628,11 @@ namespace DroneSimulator
             var editor = new MapEditorWindow(mapRenderer);
 
             editor.SaveRequested += (mapName, config) => MapEditorSaveRequested?.Invoke(mapName, config);
-            editor.CloseRequested += () => editor.Visible = false;
+            editor.CloseRequested += () =>
+            {
+                editor.Visible = false;
+                ShowMainContent();
+            };
 
             return editor;
         }
@@ -745,6 +797,118 @@ namespace DroneSimulator
 
             panel.Widgets.Add(content);
             return panel;
+        }
+
+        private Panel CreateSaveAlgorithmPanel()
+        {
+            var panel = new Panel
+            {
+                Background = new SolidBrush(new Color(210, 235, 220)),
+                Margin = new Myra.Graphics2D.Thickness(10, 6),
+                Visible = false
+            };
+
+            var content = new VerticalStackPanel
+            {
+                Spacing = 8,
+                Padding = new Myra.Graphics2D.Thickness(8)
+            };
+
+            var titleLabel = new Label
+            {
+                Text = _language == GameLanguage.Russian ? "Название алгоритма" : "Algorithm name",
+                TextColor = Color.Black
+            };
+            content.Widgets.Add(titleLabel);
+
+            _algorithmNameTextBox = new TextBox
+            {
+                Text = string.Empty,
+                Width = 360,
+                Height = 34,
+                TextColor = Color.Black,
+                Background = new SolidBrush(Color.White)
+            };
+            content.Widgets.Add(_algorithmNameTextBox);
+
+            _algorithmSaveStatusLabel = new Label
+            {
+                Text = string.Empty,
+                TextColor = new Color(120, 40, 40),
+                Width = 520
+            };
+            content.Widgets.Add(_algorithmSaveStatusLabel);
+
+            var buttons = new HorizontalStackPanel
+            {
+                Spacing = 8
+            };
+
+            var saveButton = CreateSettingsButton(
+                _language == GameLanguage.Russian ? "Сохранить" : "Save",
+                () =>
+                {
+                    string algorithmName = _algorithmNameTextBox.Text ?? string.Empty;
+
+                    if (string.IsNullOrWhiteSpace(algorithmName))
+                    {
+                        _algorithmSaveStatusLabel.Text = _language == GameLanguage.Russian
+                            ? "Введите название алгоритма."
+                            : "Enter an algorithm name.";
+                        return;
+                    }
+
+                    AlgorithmSaveRequested?.Invoke(algorithmName, GetCommandRows());
+                });
+            buttons.Widgets.Add(saveButton);
+
+            var cancelButton = CreateSettingsButton(
+                _language == GameLanguage.Russian ? "Отмена" : "Cancel",
+                () => _saveAlgorithmPanel.Visible = false);
+            buttons.Widgets.Add(cancelButton);
+
+            content.Widgets.Add(buttons);
+            panel.Widgets.Add(content);
+            return panel;
+        }
+
+        public void ShowAlgorithmSaveResult(string message, bool success)
+        {
+            if (_algorithmSaveStatusLabel != null)
+            {
+                _algorithmSaveStatusLabel.Text = message;
+                _algorithmSaveStatusLabel.TextColor = success
+                    ? new Color(30, 120, 60)
+                    : new Color(160, 45, 45);
+            }
+        }
+
+        public void LoadAlgorithmRows(IReadOnlyList<CommandRow> rows)
+        {
+            CloseAllTopPanels();
+            var copiedRows = rows
+                .Select(row => new CommandRow
+                {
+                    TickNumber = row.TickNumber,
+                    Target1 = row.Target1,
+                    Action1 = row.Action1,
+                    Argument1 = row.Argument1,
+                    Target2 = row.Target2,
+                    Action2 = row.Action2,
+                    Argument2 = row.Argument2
+                })
+                .ToList();
+
+            SetSequentialTickNumbersIfMissing(copiedRows);
+
+            if (copiedRows.Count == 0)
+            {
+                copiedRows.Add(new CommandRow { TickNumber = 1 });
+            }
+
+            _tableData = copiedRows;
+            _selectedRowIndex = 0;
+            RefreshTableUI();
         }
 
         private TextButton CreateSettingsButton(string text, Action onClick)
