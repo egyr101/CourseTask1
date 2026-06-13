@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 
 namespace DroneSimulator
 {
@@ -39,25 +40,35 @@ namespace DroneSimulator
 
         private static DroneTarget ParseTarget(string text)
         {
-            return text.Trim() switch
+            string normalized = text.Trim();
+
+            if (normalized == "Все" || normalized.Equals("All", StringComparison.OrdinalIgnoreCase))
+                return DroneTarget.All;
+
+            if (normalized == "Красный" || normalized == "Красный дрон" ||
+                normalized.Equals("Red", StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals("Red drone", StringComparison.OrdinalIgnoreCase))
             {
-                "Все" => DroneTarget.All,
-                "All" => DroneTarget.All,
+                return DroneTarget.ForDrone(0);
+            }
 
-                "Красный" => DroneTarget.Red,
-                "Красный дрон" => DroneTarget.Red,
-                "Red" => DroneTarget.Red,
-                "Red drone" => DroneTarget.Red,
+            if (normalized == "Зелёный" || normalized == "Зеленый" ||
+                normalized == "Зелёный дрон" || normalized == "Зеленый дрон" ||
+                normalized.Equals("Green", StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals("Green drone", StringComparison.OrdinalIgnoreCase))
+            {
+                return DroneTarget.ForDrone(1);
+            }
 
-                "Зелёный" => DroneTarget.Green,
-                "Зеленый" => DroneTarget.Green,
-                "Зелёный дрон" => DroneTarget.Green,
-                "Зеленый дрон" => DroneTarget.Green,
-                "Green" => DroneTarget.Green,
-                "Green drone" => DroneTarget.Green,
+            var russianMatch = Regex.Match(normalized, "^Дрон\\s+(\\d+)$", RegexOptions.IgnoreCase);
+            if (russianMatch.Success)
+                return DroneTarget.ForDrone(int.Parse(russianMatch.Groups[1].Value) - 1);
 
-                _ => throw new InvalidOperationException($"Неизвестный адресат команды: {text}")
-            };
+            var englishMatch = Regex.Match(normalized, "^Drone\\s+(\\d+)$", RegexOptions.IgnoreCase);
+            if (englishMatch.Success)
+                return DroneTarget.ForDrone(int.Parse(englishMatch.Groups[1].Value) - 1);
+
+            throw new InvalidOperationException($"Неизвестный адресат команды: {text}");
         }
 
         private static DroneCommandType ParseAction(string text)

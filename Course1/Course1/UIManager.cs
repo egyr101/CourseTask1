@@ -71,8 +71,8 @@ namespace DroneSimulator
         private Label _addresseeTitleLabel;
         private Label _commandsTitleLabel;
         private TextButton _targetAllButton;
-        private TextButton _targetRedButton;
-        private TextButton _targetGreenButton;
+        private readonly List<TextButton> _targetDroneButtons = new List<TextButton>();
+        private int _droneTargetCount;
         private TextButton _forwardButton;
         private TextButton _attackButton;
         private TextButton _leftButton;
@@ -111,6 +111,7 @@ namespace DroneSimulator
         {
             InitBrushes();
             _desktop = new Desktop();
+            _droneTargetCount = mapRenderer.Drones.Count;
 
             var rootContainer = new VerticalStackPanel { Background = _bgGreen };
 
@@ -611,8 +612,10 @@ namespace DroneSimulator
             }
 
             _targetAllButton.Text = TargetAllText();
-            _targetRedButton.Text = TargetRedText();
-            _targetGreenButton.Text = TargetGreenText();
+            for (int i = 0; i < _targetDroneButtons.Count; i++)
+            {
+                _targetDroneButtons[i].Text = TargetDroneText(i);
+            }
             _forwardButton.Text = ActionForwardText();
             _attackButton.Text = ActionAttackText();
             _leftButton.Text = ActionLeftText();
@@ -646,8 +649,21 @@ namespace DroneSimulator
         }
 
         private string TargetAllText() => _language == GameLanguage.Russian ? "Все" : "All";
-        private string TargetRedText() => _language == GameLanguage.Russian ? "Красный" : "Red";
-        private string TargetGreenText() => _language == GameLanguage.Russian ? "Зелёный" : "Green";
+
+        private string TargetDroneText(int index)
+        {
+            return _language == GameLanguage.Russian
+                ? $"Дрон {index + 1}"
+                : $"Drone {index + 1}";
+        }
+
+        private string TargetForTest(int index)
+        {
+            if (_droneTargetCount <= 0)
+                return TargetDroneText(0);
+
+            return TargetDroneText(Math.Min(index, _droneTargetCount - 1));
+        }
 
         private string ActionForwardText() => _language == GameLanguage.Russian ? "Вперёд" : "Forward";
         private string ActionAttackText() => _language == GameLanguage.Russian ? "Разряд" : "Attack";
@@ -662,19 +678,25 @@ namespace DroneSimulator
 
         private string FormatChargeInfo(DroneChargeInfo info)
         {
+            string droneName = LocalizeDroneName(info.DroneName);
+
             if (_language == GameLanguage.Russian)
             {
-                return $"{info.DroneName} дрон : {info.CurrentCharges}/{info.InitialCharges} зарядов осталось";
+                return $"{droneName}: {info.CurrentCharges}/{info.InitialCharges} зарядов осталось";
             }
 
-            string droneName = info.DroneName switch
-            {
-                "Красный" => "Red",
-                "Зелёный" => "Green",
-                _ => info.DroneName
-            };
+            return $"{droneName}: {info.CurrentCharges}/{info.InitialCharges} charges left";
+        }
 
-            return $"{droneName} drone: {info.CurrentCharges}/{info.InitialCharges} charges left";
+        private string LocalizeDroneName(string droneName)
+        {
+            if (_language == GameLanguage.Russian)
+                return droneName;
+
+            if (droneName.StartsWith("Дрон "))
+                return "Drone " + droneName.Substring("Дрон ".Length);
+
+            return droneName;
         }
 
         private TextButton CreateTestAlgorithmButton(
@@ -728,12 +750,12 @@ namespace DroneSimulator
         {
             return new List<CommandRow>
             {
-                Row(TargetRedText(), ActionAttackText(), "", TargetGreenText(), ActionAttackText()),
-                Row(TargetRedText(), ActionForwardText(), "", TargetGreenText(), ActionForwardText()),
-                Row(TargetRedText(), ActionAttackText(), "", TargetGreenText(), ActionAttackText()),
-                Row(TargetRedText(), ActionForwardText()),
-                Row(TargetRedText(), ActionLeftText()),
-                Row(TargetRedText(), ActionAttackText())
+                Row(TargetForTest(0), ActionAttackText(), "", TargetForTest(1), ActionAttackText()),
+                Row(TargetForTest(0), ActionForwardText(), "", TargetForTest(1), ActionForwardText()),
+                Row(TargetForTest(0), ActionAttackText(), "", TargetForTest(1), ActionAttackText()),
+                Row(TargetForTest(0), ActionForwardText()),
+                Row(TargetForTest(0), ActionLeftText()),
+                Row(TargetForTest(0), ActionAttackText())
             };
         }
 
@@ -741,10 +763,10 @@ namespace DroneSimulator
         {
             return new List<CommandRow>
             {
-                Row(TargetRedText(), ActionForwardText(), "3", TargetGreenText(), ActionLeftText()),
-                Row(TargetGreenText(), ActionForwardText(), "3"),
-                Row(TargetGreenText(), ActionLeftText()),
-                Row(TargetGreenText(), ActionForwardText(), "5")
+                Row(TargetForTest(0), ActionForwardText(), "3", TargetForTest(1), ActionLeftText()),
+                Row(TargetForTest(1), ActionForwardText(), "3"),
+                Row(TargetForTest(1), ActionLeftText()),
+                Row(TargetForTest(1), ActionForwardText(), "5")
             };
         }
 
@@ -752,8 +774,8 @@ namespace DroneSimulator
         {
             return new List<CommandRow>
             {
-                Row(TargetRedText(), ActionLeftText()),
-                Row(TargetRedText(), ActionForwardText(), "6")
+                Row(TargetForTest(0), ActionLeftText()),
+                Row(TargetForTest(0), ActionForwardText(), "6")
             };
         }
 
@@ -761,8 +783,8 @@ namespace DroneSimulator
         {
             return new List<CommandRow>
             {
-                Row(TargetRedText(), ActionAttackText(), "", TargetGreenText(), ActionAttackText()),
-                Row(TargetRedText(), ActionForwardText(), "", TargetGreenText(), ActionForwardText())
+                Row(TargetForTest(0), ActionAttackText(), "", TargetForTest(1), ActionAttackText()),
+                Row(TargetForTest(0), ActionForwardText(), "", TargetForTest(1), ActionForwardText())
             };
         }
 
@@ -1171,17 +1193,25 @@ namespace DroneSimulator
             StyleButton(_targetAllButton, _btnDark);
             _targetAllButton.TouchDown += (s, a) => InsertTarget(TargetAllText());
 
-            _targetRedButton = new TextButton { Text = TargetRedText(), HorizontalAlignment = HorizontalAlignment.Stretch };
-            StyleButton(_targetRedButton, _btnDark);
-            _targetRedButton.TouchDown += (s, a) => InsertTarget(TargetRedText());
-
-            _targetGreenButton = new TextButton { Text = TargetGreenText(), HorizontalAlignment = HorizontalAlignment.Stretch };
-            StyleButton(_targetGreenButton, _btnDark);
-            _targetGreenButton.TouchDown += (s, a) => InsertTarget(TargetGreenText());
-
             addresseePanel.Widgets.Add(_targetAllButton);
-            addresseePanel.Widgets.Add(_targetRedButton);
-            addresseePanel.Widgets.Add(_targetGreenButton);
+
+            _targetDroneButtons.Clear();
+            for (int i = 0; i < _droneTargetCount; i++)
+            {
+                int localIndex = i;
+                var droneButton = new TextButton
+                {
+                    Text = TargetDroneText(localIndex),
+                    HorizontalAlignment = HorizontalAlignment.Stretch
+                };
+
+                StyleButton(droneButton, _btnDark);
+                droneButton.TouchDown += (s, a) => InsertTarget(TargetDroneText(localIndex));
+
+                _targetDroneButtons.Add(droneButton);
+                addresseePanel.Widgets.Add(droneButton);
+            }
+
             controlsLayout.Widgets.Add(addresseePanel);
 
             // Блок КОМАНДЫ

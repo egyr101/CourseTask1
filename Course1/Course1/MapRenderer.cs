@@ -99,7 +99,7 @@ namespace DroneSimulator
             // Рисуем дронов
             foreach (var drone in Drones)
             {
-                drone.Draw(_spriteBatch, CellSize);
+                drone.Draw(_spriteBatch, CellSize, _pixel);
             }
 
             _spriteBatch.End();

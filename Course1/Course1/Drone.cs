@@ -8,6 +8,8 @@ namespace DroneSimulator
     {
         public Vector2 GridPosition { get; private set; } // Целевая логическая ячейка на сетке
         public Vector2 VisualPosition; // Текущая плавная визуальная позиция
+        public string Name { get; set; } = "Дрон";
+        public int Number { get; set; } = 1;
         public Color Color { get; set; }
         public Texture2D Texture { get; set; }
 
@@ -131,7 +133,7 @@ namespace DroneSimulator
             }
         }
 
-        public void Draw(SpriteBatch spriteBatch, int cellSize)
+        public void Draw(SpriteBatch spriteBatch, int cellSize, Texture2D pixel)
         {
             if (Texture == null)
                 return;
@@ -149,12 +151,104 @@ namespace DroneSimulator
                 Texture,
                 cellCenter,
                 null,
-                Color.White,
+                Color,
                 _visualRotation,
                 origin,
                 scale,
                 SpriteEffects.None,
                 0f);
+
+            DrawNumberBadge(spriteBatch, pixel, cellSize);
+        }
+
+        private void DrawNumberBadge(SpriteBatch spriteBatch, Texture2D pixel, int cellSize)
+        {
+            string numberText = Math.Max(1, Number).ToString();
+
+            int digitWidth = 5;
+            int digitHeight = 9;
+            int digitSpacing = 2;
+            int scale = 2;
+
+            int digitsWidth = numberText.Length * digitWidth * scale +
+                              Math.Max(0, numberText.Length - 1) * digitSpacing;
+
+            int badgeWidth = digitsWidth + 8;
+            int badgeHeight = digitHeight * scale + 6;
+
+            // Небольшой бейдж в правом верхнем углу клетки.
+            // Он не закрывает центр модели дрона, поэтому дрон остаётся хорошо видимым.
+            int badgeX = (int)((VisualPosition.X + 1) * cellSize) - badgeWidth - 2;
+            int badgeY = (int)(VisualPosition.Y * cellSize) + 2;
+
+            spriteBatch.Draw(
+                pixel,
+                new Rectangle(badgeX, badgeY, badgeWidth, badgeHeight),
+                new Color(0, 0, 0, 170));
+
+            int digitX = badgeX + 4;
+            int digitY = badgeY + 3;
+
+            foreach (char ch in numberText)
+            {
+                if (ch >= '0' && ch <= '9')
+                {
+                    DrawDigit(spriteBatch, pixel, ch - '0', digitX, digitY, scale, Color.White);
+                }
+
+                digitX += digitWidth * scale + digitSpacing;
+            }
+        }
+
+        private static void DrawDigit(
+            SpriteBatch spriteBatch,
+            Texture2D pixel,
+            int digit,
+            int x,
+            int y,
+            int scale,
+            Color color)
+        {
+            bool[][] segments =
+            {
+                new[] { true, true, true, true, true, true, false },      // 0
+                new[] { false, true, true, false, false, false, false },  // 1
+                new[] { true, true, false, true, true, false, true },      // 2
+                new[] { true, true, true, true, false, false, true },      // 3
+                new[] { false, true, true, false, false, true, true },     // 4
+                new[] { true, false, true, true, false, true, true },      // 5
+                new[] { true, false, true, true, true, true, true },       // 6
+                new[] { true, true, true, false, false, false, false },    // 7
+                new[] { true, true, true, true, true, true, true },        // 8
+                new[] { true, true, true, true, false, true, true }        // 9
+            };
+
+            var active = segments[digit];
+            int t = scale;
+            int w = 5 * scale;
+            int h = 9 * scale;
+
+            // Индексы сегментов: 0 верх, 1 правый верх, 2 правый низ,
+            // 3 низ, 4 левый низ, 5 левый верх, 6 центр.
+            if (active[0]) DrawRect(spriteBatch, pixel, x + t, y, w - 2 * t, t, color);
+            if (active[1]) DrawRect(spriteBatch, pixel, x + w - t, y + t, t, h / 2 - t, color);
+            if (active[2]) DrawRect(spriteBatch, pixel, x + w - t, y + h / 2, t, h / 2 - t, color);
+            if (active[3]) DrawRect(spriteBatch, pixel, x + t, y + h - t, w - 2 * t, t, color);
+            if (active[4]) DrawRect(spriteBatch, pixel, x, y + h / 2, t, h / 2 - t, color);
+            if (active[5]) DrawRect(spriteBatch, pixel, x, y + t, t, h / 2 - t, color);
+            if (active[6]) DrawRect(spriteBatch, pixel, x + t, y + h / 2 - t / 2, w - 2 * t, t, color);
+        }
+
+        private static void DrawRect(
+            SpriteBatch spriteBatch,
+            Texture2D pixel,
+            int x,
+            int y,
+            int width,
+            int height,
+            Color color)
+        {
+            spriteBatch.Draw(pixel, new Rectangle(x, y, width, height), color);
         }
     }
 }

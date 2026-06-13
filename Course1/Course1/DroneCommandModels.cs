@@ -2,11 +2,26 @@ using System;
 
 namespace DroneSimulator
 {
-    public enum DroneTarget
+    public sealed class DroneTarget
     {
-        Red,
-        Green,
-        All
+        public bool IsAll { get; }
+        public int DroneIndex { get; }
+
+        private DroneTarget(bool isAll, int droneIndex)
+        {
+            IsAll = isAll;
+            DroneIndex = droneIndex;
+        }
+
+        public static DroneTarget All { get; } = new DroneTarget(true, -1);
+
+        public static DroneTarget ForDrone(int droneIndex)
+        {
+            if (droneIndex < 0)
+                throw new ArgumentOutOfRangeException(nameof(droneIndex));
+
+            return new DroneTarget(false, droneIndex);
+        }
     }
 
     public enum DroneFacing

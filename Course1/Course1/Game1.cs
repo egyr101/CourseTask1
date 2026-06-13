@@ -17,7 +17,6 @@ namespace DroneSimulator
         public Game1()
         {
             _graphics = new GraphicsDeviceManager(this);
-            // Разрешение экрана под дизайн
             _graphics.PreferredBackBufferWidth = 1800;
             _graphics.PreferredBackBufferHeight = 1000;
             IsMouseVisible = true;
@@ -32,17 +31,39 @@ namespace DroneSimulator
             return Texture2D.FromStream(GraphicsDevice, stream);
         }
 
-        private void CreateFixedWeeds()
+        private static string GetDroneName(int index)
         {
+            return $"Дрон {index + 1}";
+        }
+
+        private static Color GetDroneTint(int index)
+        {
+            // Все дроны используют одну и ту же модель без цветового отличия.
+            // Номер дрона рисуется поверх модели на карте.
+            return Color.White;
+        }
+
+        private void BuildLevelFromConfig(LevelConfig config, Texture2D droneTexture)
+        {
+            _mapRenderer.Drones.Clear();
             _mapRenderer.WeedField.Clear();
 
-            // Фиксированные позиции нужны для предсказуемых учебных тестов.
-            // Красный дрон уничтожает три сорняка, зелёный — два.
-            _mapRenderer.WeedField.Add(new Vector2(3, 5));
-            _mapRenderer.WeedField.Add(new Vector2(4, 5));
-            _mapRenderer.WeedField.Add(new Vector2(4, 4));
-            _mapRenderer.WeedField.Add(new Vector2(11, 8));
-            _mapRenderer.WeedField.Add(new Vector2(12, 8));
+            for (int i = 0; i < config.Drones.Count; i++)
+            {
+                var drone = new Drone(config.Drones[i].ToVector2(), GetDroneTint(i))
+                {
+                    Name = GetDroneName(i),
+                    Number = i + 1,
+                    Texture = droneTexture
+                };
+
+                _mapRenderer.Drones.Add(drone);
+            }
+
+            foreach (var weed in config.Weeds)
+            {
+                _mapRenderer.WeedField.Add(weed.ToVector2());
+            }
         }
 
         protected override void Initialize()
@@ -52,28 +73,15 @@ namespace DroneSimulator
 
         protected override void LoadContent()
         {
-            // Инициализация Myra
             MyraEnvironment.Game = this;
 
-            // 1. Создаем карту
             _mapRenderer = new MapRenderer(GraphicsDevice);
 
-            // Загружаем PNG напрямую из папки Content.
-            // Так проект не зависит от MGCB/dotnet-mgcb при обычном запуске.
-            Texture2D redDroneTex = LoadTextureFromContent("red_drone.png");
-            Texture2D greenDroneTex = LoadTextureFromContent("green_drone.png");
+            Texture2D droneTexture = LoadTextureFromContent("red_drone.png");
 
-            // Создаем дронов на координатах X, Y ячейки
-            var redDrone = new Drone(new Vector2(2, 5), Color.White) { Texture = redDroneTex };
-            var greenDrone = new Drone(new Vector2(10, 8), Color.White) { Texture = greenDroneTex };
+            LevelConfig levelConfig = LevelConfigLoader.LoadFromOutputDirectory();
+            BuildLevelFromConfig(levelConfig, droneTexture);
 
-            _mapRenderer.Drones.Add(redDrone);
-            _mapRenderer.Drones.Add(greenDrone);
-
-            // Сорняки фиксированы, чтобы тестовые алгоритмы всегда работали одинаково.
-            CreateFixedWeeds();
-
-            // 2. Создаем UI
             _commandExecutor = new DroneCommandExecutor(_mapRenderer);
 
             _uiManager = new UIManager(_mapRenderer);
@@ -114,7 +122,6 @@ namespace DroneSimulator
             if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed || Keyboard.GetState().IsKeyDown(Keys.Escape))
                 Exit();
 
-            // ОБНОВЛЕНИЕ ДРОНОВ ДЛЯ ПЛАВНОГО ДВИЖЕНИЯ
             if (_mapRenderer != null && _mapRenderer.Drones != null)
             {
                 foreach (var drone in _mapRenderer.Drones)
@@ -130,15 +137,9 @@ namespace DroneSimulator
 
         protected override void Draw(GameTime gameTime)
         {
-            // Сначала перерисовываем игровую карту в текстуру
             _mapRenderer.DrawMap();
-
-            // Очищаем основной экран
             GraphicsDevice.Clear(Color.CornflowerBlue);
-
-            // Рисуем весь интерфейс (он сам вытянет текстуру карты и покажет её слева)
             _uiManager.Render();
-
             base.Draw(gameTime);
         }
     }

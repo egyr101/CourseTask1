@@ -60,14 +60,12 @@ namespace DroneSimulator
             }
         }
 
-        private static string GetDroneName(int index)
+        private string GetDroneName(int index)
         {
-            return index switch
-            {
-                0 => "Красный",
-                1 => "Зелёный",
-                _ => $"Дрон {index + 1}"
-            };
+            if (index >= 0 && index < _drones.Count)
+                return _drones[index].Drone.Name;
+
+            return $"Дрон {index + 1}";
         }
 
         public void Start(IEnumerable<CommandRow> rows)
@@ -444,21 +442,21 @@ namespace DroneSimulator
 
         private IEnumerable<int> GetTargetDroneIndexes(DroneTarget target)
         {
-            switch (target)
+            if (target.IsAll)
             {
-                case DroneTarget.Red:
-                    yield return 0;
-                    break;
+                for (int i = 0; i < _drones.Count; i++)
+                    yield return i;
 
-                case DroneTarget.Green:
-                    yield return 1;
-                    break;
-
-                case DroneTarget.All:
-                    for (int i = 0; i < _drones.Count; i++)
-                        yield return i;
-                    break;
+                yield break;
             }
+
+            if (target.DroneIndex < 0 || target.DroneIndex >= _drones.Count)
+            {
+                throw new InvalidOperationException(
+                    $"Дрон с номером {target.DroneIndex + 1} отсутствует на карте.");
+            }
+
+            yield return target.DroneIndex;
         }
 
         private static DroneFacing TurnLeft(DroneFacing direction)
