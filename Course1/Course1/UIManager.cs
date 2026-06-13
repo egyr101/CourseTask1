@@ -36,6 +36,7 @@ namespace DroneSimulator
         public event Action<float>? DroneSpeedChanged;
         public event Action<GameLanguage>? LanguageChanged;
         public event Action? LoadMapRequested;
+        public event Action<string, LevelConfig>? MapEditorSaveRequested;
 
         private Desktop _desktop;
         private Grid _tableGrid;
@@ -54,6 +55,8 @@ namespace DroneSimulator
         private Panel _filePanel;
         private Panel _testAlgorithmsPanel;
         private Panel _settingsPanel;
+        private MapEditorWindow _mapEditorWindow;
+        private MapRenderer _mapRendererForEditor;
 
         private GameLanguage _language = GameLanguage.Russian;
         private float _speedMultiplier = 1f;
@@ -126,6 +129,7 @@ namespace DroneSimulator
         {
             InitBrushes();
             _desktop = new Desktop();
+            _mapRendererForEditor = mapRenderer;
             _droneTargetCount = mapRenderer.Drones.Count;
             _language = language;
             _speedMultiplier = speedMultiplier;
@@ -145,6 +149,9 @@ namespace DroneSimulator
 
             _messagePanel = CreateMessagePanel();
             rootContainer.Widgets.Add(_messagePanel);
+
+            _mapEditorWindow = CreateMapEditorWindow(mapRenderer);
+            rootContainer.Widgets.Add(_mapEditorWindow);
 
             rootContainer.Widgets.Add(CreateMainContent(mapRenderer));
 
@@ -220,6 +227,7 @@ namespace DroneSimulator
 
         public void ShowError(string message, bool includeRestoreText = true)
         {
+            HideTopPanelsBeforeShowingMessage();
             _shouldRollbackMapWhenMessageClosed = false;
             _messagePanel.Background = new SolidBrush(new Color(170, 55, 45));
             _messageTitleLabel.Text = _language == GameLanguage.Russian
@@ -240,8 +248,20 @@ namespace DroneSimulator
             _messagePanel.Visible = true;
         }
 
+
+        public void ShowInfo(string title, string message)
+        {
+            HideTopPanelsBeforeShowingMessage();
+            _shouldRollbackMapWhenMessageClosed = false;
+            _messagePanel.Background = new SolidBrush(new Color(45, 145, 80));
+            _messageTitleLabel.Text = title;
+            _messageTextLabel.Text = message;
+            _messagePanel.Visible = true;
+        }
+
         public void ShowAlgorithmResult(AlgorithmResult result)
         {
+            HideTopPanelsBeforeShowingMessage();
             _shouldRollbackMapWhenMessageClosed = true;
             _messagePanel.Background = new SolidBrush(new Color(45, 145, 80));
             _messageTitleLabel.Text = _language == GameLanguage.Russian
@@ -335,7 +355,7 @@ namespace DroneSimulator
 
         private IReadOnlyList<CommandRow> PrepareCommandRowsForRun()
         {
-            CloseMessage();
+            CloseAllTopPanels();
             RemoveIncompleteCommandsFromTable();
             return GetCommandRows();
         }
@@ -481,6 +501,28 @@ namespace DroneSimulator
                 _settingsPanel.Visible = false;
         }
 
+        private void CloseAllTopPanels()
+        {
+            HideDropDownPanels();
+
+            if (_mapEditorWindow != null)
+                _mapEditorWindow.Visible = false;
+
+            if (_messagePanel != null && _messagePanel.Visible)
+                CloseMessage();
+        }
+
+        private void HideTopPanelsBeforeShowingMessage()
+        {
+            HideDropDownPanels();
+
+            if (_mapEditorWindow != null)
+                _mapEditorWindow.Visible = false;
+
+            if (_messagePanel != null && _messagePanel.Visible && _shouldRollbackMapWhenMessageClosed)
+                CloseMessage();
+        }
+
         private Panel CreateFilePanel()
         {
             var panel = new Panel
@@ -498,11 +540,16 @@ namespace DroneSimulator
 
             _loadMapButton = CreateFileMenuButton("Загрузить карту", () =>
             {
-                HideDropDownPanels();
+                CloseAllTopPanels();
                 LoadMapRequested?.Invoke();
             });
 
-            _openMapEditorButton = CreateFileMenuButton("Открыть редактор карт", () => { });
+            _openMapEditorButton = CreateFileMenuButton("Открыть редактор карт", () =>
+            {
+                CloseAllTopPanels();
+                _mapEditorWindow.ResetFromMap(_mapRendererForEditor);
+                _mapEditorWindow.Visible = true;
+            });
             _saveAlgorithmButton = CreateFileMenuButton("Сохранить алгоритм", () => { });
             _loadAlgorithmButton = CreateFileMenuButton("Загрузить алгоритм", () => { });
 
@@ -528,6 +575,16 @@ namespace DroneSimulator
             return button;
         }
 
+        private MapEditorWindow CreateMapEditorWindow(MapRenderer mapRenderer)
+        {
+            var editor = new MapEditorWindow(mapRenderer);
+
+            editor.SaveRequested += (mapName, config) => MapEditorSaveRequested?.Invoke(mapName, config);
+            editor.CloseRequested += () => editor.Visible = false;
+
+            return editor;
+        }
+
         private Widget CreateTopMenu()
         {
             var menuPanel = new HorizontalStackPanel
@@ -541,7 +598,7 @@ namespace DroneSimulator
             _fileButton.TouchDown += (s, a) =>
             {
                 bool shouldShow = !_filePanel.Visible;
-                HideDropDownPanels();
+                CloseAllTopPanels();
                 _filePanel.Visible = shouldShow;
             };
             menuPanel.Widgets.Add(_fileButton);
@@ -550,7 +607,7 @@ namespace DroneSimulator
             _loadTestsButton.TouchDown += (s, a) =>
             {
                 bool shouldShow = !_testAlgorithmsPanel.Visible;
-                HideDropDownPanels();
+                CloseAllTopPanels();
                 _testAlgorithmsPanel.Visible = shouldShow;
             };
             menuPanel.Widgets.Add(_loadTestsButton);
@@ -572,7 +629,7 @@ namespace DroneSimulator
             _settingsButton.TouchDown += (s, a) =>
             {
                 bool shouldShow = !_settingsPanel.Visible;
-                HideDropDownPanels();
+                CloseAllTopPanels();
                 _settingsPanel.Visible = shouldShow;
             };
             menuPanel.Widgets.Add(_settingsButton);
@@ -998,7 +1055,7 @@ namespace DroneSimulator
             button.TouchDown += (s, a) =>
             {
                 LoadTestAlgorithm(createRows());
-                _testAlgorithmsPanel.Visible = false;
+                CloseAllTopPanels();
             };
 
             return button;

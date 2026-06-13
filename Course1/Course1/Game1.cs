@@ -124,6 +124,7 @@ namespace DroneSimulator
             _uiManager.DroneSpeedChanged += speedValue => Drone.MoveSpeedMultiplier = speedValue;
             _uiManager.AlgorithmResultClosed += () => _commandExecutor.RestoreMapToInitialState();
             _uiManager.LoadMapRequested += LoadMapFromUserFile;
+            _uiManager.MapEditorSaveRequested += SaveMapFromEditor;
 
             _uiManager.UpdateDroneCharges(_commandExecutor.GetChargeInfo());
             Drone.MoveSpeedMultiplier = speed;
@@ -178,6 +179,33 @@ namespace DroneSimulator
                 LevelConfig config = LevelConfigLoader.LoadFromFile(dialog.FileName);
                 BuildLevelFromConfig(config, _droneTexture);
                 CreateCommandExecutorAndUi(currentLanguage, currentSpeed);
+            }
+            catch (Exception ex)
+            {
+                _uiManager.ShowError(ex.Message, includeRestoreText: false);
+            }
+        }
+
+        private void SaveMapFromEditor(string mapName, LevelConfig config)
+        {
+            if (_commandExecutor != null && _commandExecutor.IsRunning)
+            {
+                _uiManager.ShowError("Нельзя применять карту во время выполнения алгоритма.", includeRestoreText: false);
+                return;
+            }
+
+            try
+            {
+                GameLanguage currentLanguage = _uiManager.CurrentLanguage;
+                float currentSpeed = _uiManager.CurrentSpeedMultiplier;
+
+                LevelConfigLoader.ValidateForEditor(config);
+                ValidateConfigForCurrentMap(config);
+                string savedPath = LevelConfigLoader.SaveToLevelsFolder(mapName, config);
+
+                BuildLevelFromConfig(config, _droneTexture);
+                CreateCommandExecutorAndUi(currentLanguage, currentSpeed);
+                _uiManager.ShowInfo("Карта сохранена", $"Файл: {Path.GetFileName(savedPath)}");
             }
             catch (Exception ex)
             {

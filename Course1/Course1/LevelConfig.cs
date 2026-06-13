@@ -2,6 +2,7 @@ using Microsoft.Xna.Framework;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 
 namespace DroneSimulator
@@ -69,6 +70,31 @@ namespace DroneSimulator
             return config!;
         }
 
+        public static string SaveToLevelsFolder(string mapName, LevelConfig config)
+        {
+            Validate(config);
+
+            string safeName = CreateSafeMapFileName(mapName);
+            Directory.CreateDirectory(LevelsDirectory);
+
+            string path = Path.Combine(LevelsDirectory, safeName);
+
+            var options = new JsonSerializerOptions
+            {
+                WriteIndented = true
+            };
+
+            string json = JsonSerializer.Serialize(config, options);
+            File.WriteAllText(path, json);
+
+            return path;
+        }
+
+        public static void ValidateForEditor(LevelConfig config)
+        {
+            Validate(config);
+        }
+
         private static void Validate(LevelConfig? config)
         {
             if (config == null)
@@ -83,8 +109,53 @@ namespace DroneSimulator
             if (config.Drones.Count == 0)
                 throw new InvalidOperationException("В файле карты должен быть хотя бы один дрон.");
 
+            if (config.Drones.Count > 10)
+                throw new InvalidOperationException("На карте не может быть больше 10 дронов.");
+
             EnsureNoDuplicatePoints(config.Drones, "drones");
             EnsureNoDuplicatePoints(config.Weeds, "weeds");
+        }
+
+        private static string CreateSafeMapFileName(string mapName)
+        {
+            if (string.IsNullOrWhiteSpace(mapName))
+                throw new InvalidOperationException("Название карты не указано.");
+
+            string nameWithoutExtension = mapName.Trim();
+
+            if (nameWithoutExtension.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            {
+                nameWithoutExtension = nameWithoutExtension.Substring(0, nameWithoutExtension.Length - ".json".Length);
+            }
+
+            if (string.IsNullOrWhiteSpace(nameWithoutExtension))
+                throw new InvalidOperationException("Название карты не указано.");
+
+            var invalidChars = Path.GetInvalidFileNameChars().ToHashSet();
+            var result = new List<char>();
+
+            foreach (char ch in nameWithoutExtension)
+            {
+                if (invalidChars.Contains(ch))
+                {
+                    result.Add('_');
+                }
+                else if (char.IsWhiteSpace(ch))
+                {
+                    result.Add('_');
+                }
+                else
+                {
+                    result.Add(ch);
+                }
+            }
+
+            string safeName = new string(result.ToArray()).Trim('_');
+
+            if (string.IsNullOrWhiteSpace(safeName))
+                throw new InvalidOperationException("Название карты содержит только недопустимые символы.");
+
+            return safeName + ".json";
         }
 
         private static void EnsureNoDuplicatePoints(List<GridPointConfig> points, string sectionName)
