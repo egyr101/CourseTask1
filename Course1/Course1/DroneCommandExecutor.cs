@@ -14,6 +14,8 @@ namespace DroneSimulator
         private readonly Dictionary<int, Queue<DroneCommandType>> _activeTickQueues = new();
 
         private AlgorithmSnapshot? _initialSnapshot;
+        private bool _isStepMode;
+        private bool _hasPendingStepResultCheck;
 
         public event Action<string>? ErrorOccurred;
         public event Action<AlgorithmResult>? Completed;
@@ -23,6 +25,9 @@ namespace DroneSimulator
         private int _initialWeedCount;
 
         public bool IsRunning { get; private set; }
+        public bool IsStepMode => _isStepMode;
+        public bool IsAutoRunning => IsRunning && !_isStepMode;
+        public bool CanExecuteStep => !AnyDroneIsAnimating() && (!IsRunning || _isStepMode);
         public bool IsCompleted { get; private set; }
         public string? LastError { get; private set; }
         public string? LastMessage { get; private set; }
@@ -70,6 +75,34 @@ namespace DroneSimulator
 
         public void Start(IEnumerable<CommandRow> rows)
         {
+            BeginExecution(rows, stepMode: false);
+        }
+
+        public void Step(IEnumerable<CommandRow> rows)
+        {
+            if (IsAutoRunning || AnyDroneIsAnimating())
+                return;
+
+            try
+            {
+                if (!IsRunning)
+                {
+                    BeginExecution(rows, stepMode: true);
+
+                    if (!IsRunning || !_isStepMode)
+                        return;
+                }
+
+                ExecuteManualStep();
+            }
+            catch (Exception ex)
+            {
+                Fail(ex.Message);
+            }
+        }
+
+        private void BeginExecution(IEnumerable<CommandRow> rows, bool stepMode)
+        {
             NotifyChargesChanged();
 
             _ticks.Clear();
@@ -78,6 +111,8 @@ namespace DroneSimulator
             LastMessage = null;
             IsCompleted = false;
             IsRunning = false;
+            _isStepMode = false;
+            _hasPendingStepResultCheck = false;
             _algorithmScore = 0;
             _initialWeedCount = _mapRenderer.WeedField.TotalCount;
 
@@ -97,6 +132,7 @@ namespace DroneSimulator
                 }
 
                 IsRunning = _ticks.Count > 0;
+                _isStepMode = stepMode && IsRunning;
 
                 if (!IsRunning)
                     LastMessage = "Нет команд для выполнения.";
@@ -110,6 +146,8 @@ namespace DroneSimulator
         public void Stop()
         {
             IsRunning = false;
+            _isStepMode = false;
+            _hasPendingStepResultCheck = false;
             _ticks.Clear();
             _activeTickQueues.Clear();
         }
@@ -118,6 +156,9 @@ namespace DroneSimulator
         {
             RestoreInitialSnapshot();
             IsCompleted = false;
+            IsRunning = false;
+            _isStepMode = false;
+            _hasPendingStepResultCheck = false;
             LastMessage = null;
             LastError = null;
         }
@@ -147,6 +188,17 @@ namespace DroneSimulator
 
             try
             {
+                if (_isStepMode)
+                {
+                    if (_hasPendingStepResultCheck)
+                    {
+                        _hasPendingStepResultCheck = false;
+                        CheckStateAfterExecutedStep();
+                    }
+
+                    return;
+                }
+
                 CheckCollisions();
 
                 if (CheckCompletion())
@@ -171,6 +223,47 @@ namespace DroneSimulator
             catch (Exception ex)
             {
                 Fail(ex.Message);
+            }
+        }
+
+        private void ExecuteManualStep()
+        {
+            CheckCollisions();
+
+            if (CheckCompletion())
+                return;
+
+            if (!HasActiveTick())
+            {
+                if (!HasWaitingTicks())
+                {
+                    Fail("Алгоритм завершился, но на поле остались сорняки.");
+                    return;
+                }
+
+                LoadNextTick();
+            }
+
+            ExecuteOneParallelStep();
+            _hasPendingStepResultCheck = true;
+
+            if (!AnyDroneIsAnimating())
+            {
+                _hasPendingStepResultCheck = false;
+                CheckStateAfterExecutedStep();
+            }
+        }
+
+        private void CheckStateAfterExecutedStep()
+        {
+            CheckCollisions();
+
+            if (CheckCompletion())
+                return;
+
+            if (!HasActiveTick() && !HasWaitingTicks())
+            {
+                Fail("Алгоритм завершился, но на поле остались сорняки.");
             }
         }
 

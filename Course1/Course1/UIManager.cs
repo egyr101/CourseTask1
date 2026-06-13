@@ -34,6 +34,7 @@ namespace DroneSimulator
     public class UIManager
     {
         public event Action<IReadOnlyList<CommandRow>>? RunRequested;
+        public event Action<IReadOnlyList<CommandRow>>? StepRunRequested;
         public event Action? AlgorithmResultClosed;
         public event Action<float>? DroneSpeedChanged;
         public event Action<GameLanguage>? LanguageChanged;
@@ -42,6 +43,7 @@ namespace DroneSimulator
         public event Action<string, IReadOnlyList<CommandRow>>? AlgorithmSaveRequested;
         public event Action? AlgorithmLoadRequested;
         public event Action? HelpRequested;
+        public event Action? ResetMapRequested;
 
         private Desktop _desktop;
         private Grid _tableGrid;
@@ -78,7 +80,16 @@ namespace DroneSimulator
 
         private TextButton _loadTestsButton;
         private TextButton _runButton;
+        private TextButton _stepRunButton;
+        private TextButton _resetMapButton;
+        private bool _runButtonAllowedByExecutor = true;
+        private bool _stepRunButtonAllowedByExecutor = true;
+        private bool _testAlgorithmsButtonAllowedByExecutor = true;
         private bool _canRunAlgorithm = true;
+        private bool _canStepRunAlgorithm = true;
+        private bool _canLoadTestAlgorithms = true;
+        private bool _canResetMap = true;
+        private bool _isMapEditorOpen;
         private TextButton _helpButton;
         private TextButton _settingsButton;
 
@@ -329,22 +340,51 @@ namespace DroneSimulator
 
         public void SetRunButtonEnabled(bool isEnabled)
         {
-            _canRunAlgorithm = isEnabled;
+            _runButtonAllowedByExecutor = isEnabled;
+            RefreshTopActionButtonStates();
+        }
 
-            if (_runButton == null)
+        public void SetStepRunButtonEnabled(bool isEnabled)
+        {
+            _stepRunButtonAllowedByExecutor = isEnabled;
+            RefreshTopActionButtonStates();
+        }
+
+        public void SetTestAlgorithmsButtonEnabled(bool isEnabled)
+        {
+            _testAlgorithmsButtonAllowedByExecutor = isEnabled;
+            RefreshTopActionButtonStates();
+        }
+
+        private void RefreshTopActionButtonStates()
+        {
+            _canRunAlgorithm = _runButtonAllowedByExecutor && !_isMapEditorOpen;
+            _canStepRunAlgorithm = _stepRunButtonAllowedByExecutor && !_isMapEditorOpen;
+            _canLoadTestAlgorithms = _testAlgorithmsButtonAllowedByExecutor && !_isMapEditorOpen;
+            _canResetMap = !_isMapEditorOpen;
+
+            ApplyTopButtonEnabledState(_runButton, _canRunAlgorithm);
+            ApplyTopButtonEnabledState(_stepRunButton, _canStepRunAlgorithm);
+            ApplyTopButtonEnabledState(_loadTestsButton, _canLoadTestAlgorithms);
+            ApplyTopButtonEnabledState(_resetMapButton, _canResetMap);
+        }
+
+        private void ApplyTopButtonEnabledState(TextButton? button, bool isEnabled)
+        {
+            if (button == null)
                 return;
 
-            _runButton.TextColor = isEnabled
+            button.TextColor = isEnabled
                 ? Color.White
                 : new Color(150, 150, 150);
 
-            _runButton.Background = isEnabled
+            button.Background = isEnabled
                 ? null
                 : new SolidBrush(new Color(40, 40, 40, 120));
 
-            _runButton.OverBackground = _runButton.Background;
-            _runButton.PressedBackground = _runButton.Background;
-            _runButton.FocusedBackground = _runButton.Background;
+            button.OverBackground = button.Background;
+            button.PressedBackground = button.Background;
+            button.FocusedBackground = button.Background;
         }
 
         public void Render() => _desktop.Render();
@@ -514,6 +554,24 @@ namespace DroneSimulator
                 _mainContent.Visible = false;
         }
 
+        private void OpenMapEditorMode()
+        {
+            _isMapEditorOpen = true;
+            RefreshTopActionButtonStates();
+            HideMainContent();
+            _mapEditorWindow.Visible = true;
+        }
+
+        private void CloseMapEditorMode()
+        {
+            if (_mapEditorWindow != null)
+                _mapEditorWindow.Visible = false;
+
+            _isMapEditorOpen = false;
+            ShowMainContent();
+            RefreshTopActionButtonStates();
+        }
+
         private void HideDropDownPanels()
         {
             if (_filePanel != null)
@@ -533,10 +591,7 @@ namespace DroneSimulator
         {
             HideDropDownPanels();
 
-            if (_mapEditorWindow != null)
-                _mapEditorWindow.Visible = false;
-
-            ShowMainContent();
+            CloseMapEditorMode();
 
             if (_messagePanel != null && _messagePanel.Visible)
                 CloseMessage();
@@ -546,10 +601,7 @@ namespace DroneSimulator
         {
             HideDropDownPanels();
 
-            if (_mapEditorWindow != null)
-                _mapEditorWindow.Visible = false;
-
-            ShowMainContent();
+            CloseMapEditorMode();
 
             if (_messagePanel != null && _messagePanel.Visible && _shouldRollbackMapWhenMessageClosed)
                 CloseMessage();
@@ -580,8 +632,7 @@ namespace DroneSimulator
             {
                 CloseAllTopPanels();
                 _mapEditorWindow.ResetFromMap(_mapRendererForEditor);
-                HideMainContent();
-                _mapEditorWindow.Visible = true;
+                OpenMapEditorMode();
             });
             _saveAlgorithmButton = CreateFileMenuButton("Сохранить алгоритм", () =>
             {
@@ -632,8 +683,7 @@ namespace DroneSimulator
             editor.SaveRequested += (mapName, config) => MapEditorSaveRequested?.Invoke(mapName, config);
             editor.CloseRequested += () =>
             {
-                editor.Visible = false;
-                ShowMainContent();
+                CloseMapEditorMode();
             };
 
             return editor;
@@ -660,6 +710,9 @@ namespace DroneSimulator
             _loadTestsButton = CreateTopMenuButton("Загрузить тестовые алгоритмы");
             _loadTestsButton.TouchDown += (s, a) =>
             {
+                if (!_canLoadTestAlgorithms)
+                    return;
+
                 bool shouldShow = !_testAlgorithmsPanel.Visible;
                 CloseAllTopPanels();
                 _testAlgorithmsPanel.Visible = shouldShow;
@@ -675,6 +728,27 @@ namespace DroneSimulator
                 RunRequested?.Invoke(PrepareCommandRowsForRun());
             };
             menuPanel.Widgets.Add(_runButton);
+
+            _stepRunButton = CreateTopMenuButton("Выполнить пошагово");
+            _stepRunButton.TouchDown += (s, a) =>
+            {
+                if (!_canStepRunAlgorithm)
+                    return;
+
+                StepRunRequested?.Invoke(PrepareCommandRowsForRun());
+            };
+            menuPanel.Widgets.Add(_stepRunButton);
+
+            _resetMapButton = CreateTopMenuButton("Возврат на начальную позицию");
+            _resetMapButton.TouchDown += (s, a) =>
+            {
+                if (!_canResetMap)
+                    return;
+
+                CloseAllTopPanels();
+                ResetMapRequested?.Invoke();
+            };
+            menuPanel.Widgets.Add(_resetMapButton);
 
             _helpButton = CreateTopMenuButton("Помощь");
             _helpButton.TouchDown += (s, a) =>
@@ -1033,6 +1107,8 @@ namespace DroneSimulator
                 _fileButton.Text = "Файл";
                 _loadTestsButton.Text = "Загрузить тестовые алгоритмы";
                 _runButton.Text = "Выполнить";
+                _stepRunButton.Text = "Выполнить пошагово";
+                _resetMapButton.Text = "Возврат на начальную позицию";
                 _helpButton.Text = "Помощь";
                 _settingsButton.Text = "Настройки";
                 _messageCloseLabel.Text = "Закрыть";
@@ -1059,6 +1135,8 @@ namespace DroneSimulator
                 _fileButton.Text = "File";
                 _loadTestsButton.Text = "Load test algorithms";
                 _runButton.Text = "Run";
+                _stepRunButton.Text = "Run step by step";
+                _resetMapButton.Text = "Return to initial position";
                 _helpButton.Text = "Help";
                 _settingsButton.Text = "Settings";
                 _messageCloseLabel.Text = "Close";
@@ -1094,6 +1172,7 @@ namespace DroneSimulator
             UpdateSettingsStateLabels();
             UpdateDroneCharges(_lastChargeInfos);
             _mapEditorWindow?.SetLanguage(_language);
+            RefreshTopActionButtonStates();
         }
 
         private void UpdateSettingsStateLabels()
@@ -1306,6 +1385,9 @@ namespace DroneSimulator
             StyleButton(button, _btnDark, 34);
             button.TouchDown += (s, a) =>
             {
+                if (!_canLoadTestAlgorithms)
+                    return;
+
                 LoadTestAlgorithm(createRows());
                 CloseAllTopPanels();
             };

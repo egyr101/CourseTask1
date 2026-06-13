@@ -112,13 +112,13 @@ namespace DroneSimulator
             _commandExecutor.ErrorOccurred += error =>
             {
                 _uiManager.ShowError(error);
-                _uiManager.SetRunButtonEnabled(true);
+                UpdateExecutionButtons();
             };
 
             _commandExecutor.Completed += result =>
             {
                 _uiManager.ShowAlgorithmResult(result);
-                _uiManager.SetRunButtonEnabled(true);
+                UpdateExecutionButtons();
             };
 
             _commandExecutor.ChargesChanged += charges => _uiManager.UpdateDroneCharges(charges);
@@ -129,6 +129,7 @@ namespace DroneSimulator
             _uiManager.AlgorithmSaveRequested += SaveAlgorithmFromTable;
             _uiManager.AlgorithmLoadRequested += LoadAlgorithmFromUserFile;
             _uiManager.HelpRequested += OpenGuideSite;
+            _uiManager.ResetMapRequested += ResetMapToInitialPosition;
 
             _uiManager.UpdateDroneCharges(_commandExecutor.GetChargeInfo());
             Drone.MoveSpeedMultiplier = speed;
@@ -139,15 +140,41 @@ namespace DroneSimulator
                     return;
 
                 _uiManager.HideMessage();
-                _uiManager.SetRunButtonEnabled(false);
-
                 _commandExecutor.Start(rows);
-
-                if (!_commandExecutor.IsRunning)
-                {
-                    _uiManager.SetRunButtonEnabled(true);
-                }
+                UpdateExecutionButtons();
             };
+
+            _uiManager.StepRunRequested += rows =>
+            {
+                if (!_commandExecutor.CanExecuteStep)
+                    return;
+
+                _uiManager.HideMessage();
+                _commandExecutor.Step(rows);
+                UpdateExecutionButtons();
+            };
+
+            UpdateExecutionButtons();
+        }
+
+        private void UpdateExecutionButtons()
+        {
+            if (_uiManager == null || _commandExecutor == null)
+                return;
+
+            _uiManager.SetRunButtonEnabled(!_commandExecutor.IsRunning);
+            _uiManager.SetStepRunButtonEnabled(_commandExecutor.CanExecuteStep);
+            _uiManager.SetTestAlgorithmsButtonEnabled(!_commandExecutor.IsRunning);
+        }
+
+        private void ResetMapToInitialPosition()
+        {
+            if (_commandExecutor == null)
+                return;
+
+            _uiManager.HideMessage();
+            _commandExecutor.RestoreMapToInitialState();
+            UpdateExecutionButtons();
         }
 
 
@@ -344,6 +371,7 @@ namespace DroneSimulator
             }
 
             _commandExecutor?.Update(gameTime);
+            UpdateExecutionButtons();
 
             base.Update(gameTime);
         }
