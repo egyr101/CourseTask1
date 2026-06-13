@@ -112,6 +112,9 @@ namespace DroneSimulator
             if (config.Drones.Count > 10)
                 throw new InvalidOperationException("На карте не может быть больше 10 дронов.");
 
+            if (config.Weeds.Count < config.Drones.Count)
+                throw new InvalidOperationException("Количество сорняков не должно быть меньше количества дронов.");
+
             EnsureNoDuplicatePoints(config.Drones, "drones");
             EnsureNoDuplicatePoints(config.Weeds, "weeds");
         }

@@ -15,9 +15,9 @@ namespace DroneSimulator
     public sealed class MapEditorWindow : Panel
     {
         private const int MaxDrones = 10;
-        private const int EditorCellSize = 28;
-        private const int ControlPanelWidth = 420;
-        private const int ControlTextWrapLength = 44;
+        private const int EditorCellSize = 24;
+        private const int ControlPanelWidth = 440;
+        private const int ControlTextWrapLength = 46;
 
         public event Action<string, LevelConfig>? SaveRequested;
         public event Action? CloseRequested;
@@ -130,10 +130,20 @@ namespace DroneSimulator
 
         private Widget CreateMapGrid()
         {
+            var gridPanel = new Panel
+            {
+                Width = _gridWidth * EditorCellSize + 2,
+                Height = _gridHeight * EditorCellSize + 2,
+                Padding = new Thickness(1),
+                Background = new SolidBrush(new Color(80, 130, 90))
+            };
+
             var grid = new Grid
             {
                 ShowGridLines = true,
-                GridLinesColor = Color.White
+                GridLinesColor = Color.White,
+                Width = _gridWidth * EditorCellSize,
+                Height = _gridHeight * EditorCellSize
             };
 
             for (int x = 0; x < _gridWidth; x++)
@@ -172,7 +182,8 @@ namespace DroneSimulator
                 }
             }
 
-            return grid;
+            gridPanel.Widgets.Add(grid);
+            return gridPanel;
         }
 
         private Widget CreateControlPanel()
@@ -221,7 +232,8 @@ namespace DroneSimulator
 
             panel.Widgets.Add(CreateControlLabel("Ограничения:", topMargin: 8));
             panel.Widgets.Add(CreateControlLabel("- максимум 10 дронов;"));
-            panel.Widgets.Add(CreateControlLabel("- дрон и сорняк не могут стоять в одной клетке."));
+            panel.Widgets.Add(CreateControlLabel("- дрон и сорняк не могут стоять в одной клетке;"));
+            panel.Widgets.Add(CreateControlLabel("- сорняков должно быть не меньше, чем дронов."));
 
             panel.Widgets.Add(_statusLabel);
 
@@ -346,6 +358,13 @@ namespace DroneSimulator
                 return;
             }
 
+            if (_weeds.Count < _drones.Count)
+            {
+                SetStatus("Нельзя сохранить карту: сорняков должно быть не меньше, чем дронов.", true);
+                RefreshView();
+                return;
+            }
+
             string mapName = _mapNameTextBox.Text?.Trim() ?? string.Empty;
 
             if (string.IsNullOrWhiteSpace(mapName))
@@ -434,6 +453,16 @@ namespace DroneSimulator
 
             _selectedCellLabel.Text = $"Выбрана клетка: ({_selectedCell.X}, {_selectedCell.Y})";
             _objectsCountLabel.Text = $"Дронов: {_drones.Count}/{MaxDrones}; сорняков: {_weeds.Count}";
+
+            if (_weeds.Count < _drones.Count)
+            {
+                _objectsCountLabel.Text += "\nДля сохранения нужно больше сорняков.";
+                _objectsCountLabel.TextColor = new Color(170, 55, 45);
+            }
+            else
+            {
+                _objectsCountLabel.TextColor = Color.Black;
+            }
 
             bool canAddDrone = _drones.Count < MaxDrones;
             _addDroneButton.TextColor = canAddDrone ? Color.White : new Color(170, 170, 170);
