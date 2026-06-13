@@ -9,7 +9,7 @@ using System.Linq;
 namespace DroneSimulator
 {
     /// <summary>
-    /// Окно редактора карт. Позволяет изменить расположение дронов и сорняков
+    /// Экран редактора карт. Позволяет изменить расположение дронов и сорняков
     /// без изменения размеров карты.
     /// </summary>
     public sealed class MapEditorWindow : Panel
@@ -28,7 +28,10 @@ namespace DroneSimulator
         private readonly List<Point> _drones = new();
         private readonly List<Point> _weeds = new();
 
+        private GameLanguage _language = GameLanguage.Russian;
         private Point _selectedCell;
+        private bool _lastStatusIsError;
+        private Func<string>? _lastStatusTextProvider;
 
         private Label _titleLabel;
         private Label _mapNameLabel;
@@ -36,6 +39,10 @@ namespace DroneSimulator
         private Label _selectedCellLabel;
         private Label _objectsCountLabel;
         private Label _statusLabel;
+        private Label _restrictionsTitleLabel;
+        private Label _restrictionMaxDronesLabel;
+        private Label _restrictionOccupiedLabel;
+        private Label _restrictionWeedsLabel;
 
         private TextButton _addDroneButton;
         private TextButton _addWeedButton;
@@ -68,6 +75,14 @@ namespace DroneSimulator
             ResetFromMap(mapRenderer);
         }
 
+        public void SetLanguage(GameLanguage language)
+        {
+            _language = language;
+            UpdateStaticTexts();
+            RefreshStatusText();
+            RefreshView();
+        }
+
         public void ResetFromMap(MapRenderer mapRenderer)
         {
             _drones.Clear();
@@ -90,7 +105,7 @@ namespace DroneSimulator
                 _mapNameTextBox.Text = "level_custom";
             }
 
-            SetStatus("Выберите клетку и действие.", false);
+            SetStatus(() => TextSelectCellAndAction(), false);
             RefreshView();
         }
 
@@ -109,7 +124,7 @@ namespace DroneSimulator
 
             _titleLabel = new Label
             {
-                Text = "Редактор карт",
+                Text = TextMapEditorTitle(),
                 TextColor = Color.Black,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 0, 0, 4)
@@ -173,7 +188,7 @@ namespace DroneSimulator
                     cell.TouchDown += (s, a) =>
                     {
                         _selectedCell = point;
-                        SetStatus($"Выбрана клетка ({point.X}, {point.Y}).", false);
+                        SetStatus(() => TextSelectedCell(point), false);
                         RefreshView();
                     };
 
@@ -198,7 +213,7 @@ namespace DroneSimulator
 
             _mapNameLabel = new Label
             {
-                Text = "Название карты",
+                Text = TextMapNameLabel(),
                 TextColor = Color.Black
             };
 
@@ -220,20 +235,25 @@ namespace DroneSimulator
             panel.Widgets.Add(_selectedCellLabel);
             panel.Widgets.Add(_objectsCountLabel);
 
-            _addDroneButton = CreateButton("Добавить дрон", AddDroneAtSelectedCell);
-            _addWeedButton = CreateButton("Добавить сорняк", AddWeedAtSelectedCell);
-            _removeDroneButton = CreateButton("Удалить дрон", RemoveDroneAtSelectedCell);
-            _removeWeedButton = CreateButton("Удалить сорняк", RemoveWeedAtSelectedCell);
+            _addDroneButton = CreateButton(TextAddDrone(), AddDroneAtSelectedCell);
+            _addWeedButton = CreateButton(TextAddWeed(), AddWeedAtSelectedCell);
+            _removeDroneButton = CreateButton(TextRemoveDrone(), RemoveDroneAtSelectedCell);
+            _removeWeedButton = CreateButton(TextRemoveWeed(), RemoveWeedAtSelectedCell);
 
             panel.Widgets.Add(_addDroneButton);
             panel.Widgets.Add(_addWeedButton);
             panel.Widgets.Add(_removeDroneButton);
             panel.Widgets.Add(_removeWeedButton);
 
-            panel.Widgets.Add(CreateControlLabel("Ограничения:", topMargin: 8));
-            panel.Widgets.Add(CreateControlLabel("- максимум 10 дронов;"));
-            panel.Widgets.Add(CreateControlLabel("- дрон и сорняк не могут стоять в одной клетке;"));
-            panel.Widgets.Add(CreateControlLabel("- сорняков должно быть не меньше, чем дронов."));
+            _restrictionsTitleLabel = CreateControlLabel(TextRestrictionsTitle(), topMargin: 8);
+            _restrictionMaxDronesLabel = CreateControlLabel(TextRestrictionMaxDrones());
+            _restrictionOccupiedLabel = CreateControlLabel(TextRestrictionOccupied());
+            _restrictionWeedsLabel = CreateControlLabel(TextRestrictionWeeds());
+
+            panel.Widgets.Add(_restrictionsTitleLabel);
+            panel.Widgets.Add(_restrictionMaxDronesLabel);
+            panel.Widgets.Add(_restrictionOccupiedLabel);
+            panel.Widgets.Add(_restrictionWeedsLabel);
 
             panel.Widgets.Add(_statusLabel);
 
@@ -243,8 +263,8 @@ namespace DroneSimulator
                 Margin = new Thickness(0, 8, 0, 0)
             };
 
-            _applyButton = CreateButton("Сохранить и применить", ApplyLevel);
-            _closeButton = CreateButton("Закрыть", () => CloseRequested?.Invoke());
+            _applyButton = CreateButton(TextSaveAndApply(), ApplyLevel);
+            _closeButton = CreateButton(TextClose(), () => CloseRequested?.Invoke());
             bottomButtons.Widgets.Add(_applyButton);
             bottomButtons.Widgets.Add(_closeButton);
 
@@ -287,20 +307,20 @@ namespace DroneSimulator
         {
             if (_drones.Count >= MaxDrones)
             {
-                SetStatus("Нельзя добавить дрон: достигнут лимит 10 дронов.", true);
+                SetStatus(() => TextCannotAddDroneLimit(), true);
                 RefreshView();
                 return;
             }
 
             if (IsCellOccupied(_selectedCell))
             {
-                SetStatus("Клетка уже занята. Выберите свободную клетку.", true);
+                SetStatus(() => TextCellOccupied(), true);
                 RefreshView();
                 return;
             }
 
             _drones.Add(_selectedCell);
-            SetStatus("Дрон добавлен.", false);
+            SetStatus(() => TextDroneAdded(), false);
             RefreshView();
         }
 
@@ -308,13 +328,13 @@ namespace DroneSimulator
         {
             if (IsCellOccupied(_selectedCell))
             {
-                SetStatus("Клетка уже занята. Выберите свободную клетку.", true);
+                SetStatus(() => TextCellOccupied(), true);
                 RefreshView();
                 return;
             }
 
             _weeds.Add(_selectedCell);
-            SetStatus("Сорняк добавлен.", false);
+            SetStatus(() => TextWeedAdded(), false);
             RefreshView();
         }
 
@@ -322,12 +342,12 @@ namespace DroneSimulator
         {
             if (!_drones.Remove(_selectedCell))
             {
-                SetStatus("В выбранной клетке нет дрона.", true);
+                SetStatus(() => TextNoDroneInCell(), true);
                 RefreshView();
                 return;
             }
 
-            SetStatus("Дрон удалён.", false);
+            SetStatus(() => TextDroneRemoved(), false);
             RefreshView();
         }
 
@@ -335,12 +355,12 @@ namespace DroneSimulator
         {
             if (!_weeds.Remove(_selectedCell))
             {
-                SetStatus("В выбранной клетке нет сорняка.", true);
+                SetStatus(() => TextNoWeedInCell(), true);
                 RefreshView();
                 return;
             }
 
-            SetStatus("Сорняк удалён.", false);
+            SetStatus(() => TextWeedRemoved(), false);
             RefreshView();
         }
 
@@ -353,14 +373,14 @@ namespace DroneSimulator
         {
             if (_drones.Count == 0)
             {
-                SetStatus("На карте должен быть хотя бы один дрон.", true);
+                SetStatus(() => TextNeedAtLeastOneDrone(), true);
                 RefreshView();
                 return;
             }
 
             if (_weeds.Count < _drones.Count)
             {
-                SetStatus("Нельзя сохранить карту: сорняков должно быть не меньше, чем дронов.", true);
+                SetStatus(() => TextCannotSaveNeedWeeds(), true);
                 RefreshView();
                 return;
             }
@@ -369,7 +389,7 @@ namespace DroneSimulator
 
             if (string.IsNullOrWhiteSpace(mapName))
             {
-                SetStatus("Введите название карты.", true);
+                SetStatus(() => TextEnterMapName(), true);
                 RefreshView();
                 return;
             }
@@ -387,10 +407,24 @@ namespace DroneSimulator
             SaveRequested?.Invoke(mapName, config);
         }
 
-        private void SetStatus(string message, bool isError)
+        private void SetStatus(Func<string> textProvider, bool isError)
         {
+            _lastStatusTextProvider = textProvider;
+            _lastStatusIsError = isError;
+            RefreshStatusText();
+        }
+
+        private void RefreshStatusText()
+        {
+            if (_statusLabel == null)
+                return;
+
+            string message = _lastStatusTextProvider != null
+                ? _lastStatusTextProvider()
+                : string.Empty;
+
             _statusLabel.Text = WrapText(message, ControlTextWrapLength);
-            _statusLabel.TextColor = isError
+            _statusLabel.TextColor = _lastStatusIsError
                 ? new Color(170, 55, 45)
                 : Color.Black;
         }
@@ -451,12 +485,12 @@ namespace DroneSimulator
                 }
             }
 
-            _selectedCellLabel.Text = $"Выбрана клетка: ({_selectedCell.X}, {_selectedCell.Y})";
-            _objectsCountLabel.Text = $"Дронов: {_drones.Count}/{MaxDrones}; сорняков: {_weeds.Count}";
+            _selectedCellLabel.Text = TextSelectedCellLabel();
+            _objectsCountLabel.Text = TextObjectsCount();
 
             if (_weeds.Count < _drones.Count)
             {
-                _objectsCountLabel.Text += "\nДля сохранения нужно больше сорняков.";
+                _objectsCountLabel.Text += "\n" + TextNeedMoreWeedsForSaving();
                 _objectsCountLabel.TextColor = new Color(170, 55, 45);
             }
             else
@@ -470,6 +504,25 @@ namespace DroneSimulator
             _addDroneButton.OverBackground = _addDroneButton.Background;
             _addDroneButton.PressedBackground = _addDroneButton.Background;
             _addDroneButton.FocusedBackground = _addDroneButton.Background;
+        }
+
+        private void UpdateStaticTexts()
+        {
+            if (_titleLabel == null)
+                return;
+
+            _titleLabel.Text = TextMapEditorTitle();
+            _mapNameLabel.Text = TextMapNameLabel();
+            _addDroneButton.Text = TextAddDrone();
+            _addWeedButton.Text = TextAddWeed();
+            _removeDroneButton.Text = TextRemoveDrone();
+            _removeWeedButton.Text = TextRemoveWeed();
+            _applyButton.Text = TextSaveAndApply();
+            _closeButton.Text = TextClose();
+            _restrictionsTitleLabel.Text = WrapText(TextRestrictionsTitle(), ControlTextWrapLength);
+            _restrictionMaxDronesLabel.Text = WrapText(TextRestrictionMaxDrones(), ControlTextWrapLength);
+            _restrictionOccupiedLabel.Text = WrapText(TextRestrictionOccupied(), ControlTextWrapLength);
+            _restrictionWeedsLabel.Text = WrapText(TextRestrictionWeeds(), ControlTextWrapLength);
         }
 
         private IBrush GetBrushForCell(Point point)
@@ -501,10 +554,39 @@ namespace DroneSimulator
 
             if (_weeds.Contains(point))
             {
-                return "W";
+                return _language == GameLanguage.Russian ? "C" : "W";
             }
 
             return null;
         }
+
+        private string TextMapEditorTitle() => _language == GameLanguage.Russian ? "Редактор карт" : "Map editor";
+        private string TextMapNameLabel() => _language == GameLanguage.Russian ? "Название карты" : "Map name";
+        private string TextAddDrone() => _language == GameLanguage.Russian ? "Добавить дрон" : "Add drone";
+        private string TextAddWeed() => _language == GameLanguage.Russian ? "Добавить сорняк" : "Add weed";
+        private string TextRemoveDrone() => _language == GameLanguage.Russian ? "Удалить дрон" : "Remove drone";
+        private string TextRemoveWeed() => _language == GameLanguage.Russian ? "Удалить сорняк" : "Remove weed";
+        private string TextSaveAndApply() => _language == GameLanguage.Russian ? "Сохранить и применить" : "Save and apply";
+        private string TextClose() => _language == GameLanguage.Russian ? "Закрыть" : "Close";
+        private string TextRestrictionsTitle() => _language == GameLanguage.Russian ? "Ограничения:" : "Rules:";
+        private string TextRestrictionMaxDrones() => _language == GameLanguage.Russian ? "- максимум 10 дронов;" : "- maximum 10 drones;";
+        private string TextRestrictionOccupied() => _language == GameLanguage.Russian ? "- дрон и сорняк не могут стоять в одной клетке;" : "- a drone and a weed cannot occupy the same cell;";
+        private string TextRestrictionWeeds() => _language == GameLanguage.Russian ? "- сорняков должно быть не меньше, чем дронов." : "- the number of weeds must be at least the number of drones.";
+        private string TextSelectCellAndAction() => _language == GameLanguage.Russian ? "Выберите клетку и действие." : "Select a cell and an action.";
+        private string TextSelectedCell(Point point) => _language == GameLanguage.Russian ? $"Выбрана клетка ({point.X}, {point.Y})." : $"Selected cell ({point.X}, {point.Y}).";
+        private string TextCannotAddDroneLimit() => _language == GameLanguage.Russian ? "Нельзя добавить дрон: достигнут лимит 10 дронов." : "Cannot add a drone: the limit of 10 drones has been reached.";
+        private string TextCellOccupied() => _language == GameLanguage.Russian ? "Клетка уже занята. Выберите свободную клетку." : "The cell is already occupied. Select an empty cell.";
+        private string TextDroneAdded() => _language == GameLanguage.Russian ? "Дрон добавлен." : "Drone added.";
+        private string TextWeedAdded() => _language == GameLanguage.Russian ? "Сорняк добавлен." : "Weed added.";
+        private string TextNoDroneInCell() => _language == GameLanguage.Russian ? "В выбранной клетке нет дрона." : "There is no drone in the selected cell.";
+        private string TextNoWeedInCell() => _language == GameLanguage.Russian ? "В выбранной клетке нет сорняка." : "There is no weed in the selected cell.";
+        private string TextDroneRemoved() => _language == GameLanguage.Russian ? "Дрон удалён." : "Drone removed.";
+        private string TextWeedRemoved() => _language == GameLanguage.Russian ? "Сорняк удалён." : "Weed removed.";
+        private string TextNeedAtLeastOneDrone() => _language == GameLanguage.Russian ? "На карте должен быть хотя бы один дрон." : "The map must contain at least one drone.";
+        private string TextCannotSaveNeedWeeds() => _language == GameLanguage.Russian ? "Нельзя сохранить карту: сорняков должно быть не меньше, чем дронов." : "Cannot save the map: the number of weeds must be at least the number of drones.";
+        private string TextEnterMapName() => _language == GameLanguage.Russian ? "Введите название карты." : "Enter a map name.";
+        private string TextSelectedCellLabel() => _language == GameLanguage.Russian ? $"Выбрана клетка: ({_selectedCell.X}, {_selectedCell.Y})" : $"Selected cell: ({_selectedCell.X}, {_selectedCell.Y})";
+        private string TextObjectsCount() => _language == GameLanguage.Russian ? $"Дронов: {_drones.Count}/{MaxDrones}; сорняков: {_weeds.Count}" : $"Drones: {_drones.Count}/{MaxDrones}; weeds: {_weeds.Count}";
+        private string TextNeedMoreWeedsForSaving() => _language == GameLanguage.Russian ? "Для сохранения нужно больше сорняков." : "More weeds are required before saving.";
     }
 }

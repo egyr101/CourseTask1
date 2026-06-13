@@ -20,5 +20,6 @@
     <None Include="Content\*.png" CopyToOutputDirectory="PreserveNewest" />
     <None Include="levels\*.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="algorithms\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="guid\**\*.*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

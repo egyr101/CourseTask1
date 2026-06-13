@@ -5,6 +5,7 @@ using Myra;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Diagnostics;
 using System.Linq;
 
 namespace DroneSimulator
@@ -127,6 +128,7 @@ namespace DroneSimulator
             _uiManager.MapEditorSaveRequested += SaveMapFromEditor;
             _uiManager.AlgorithmSaveRequested += SaveAlgorithmFromTable;
             _uiManager.AlgorithmLoadRequested += LoadAlgorithmFromUserFile;
+            _uiManager.HelpRequested += OpenGuideSite;
 
             _uiManager.UpdateDroneCharges(_commandExecutor.GetChargeInfo());
             Drone.MoveSpeedMultiplier = speed;
@@ -146,6 +148,30 @@ namespace DroneSimulator
                     _uiManager.SetRunButtonEnabled(true);
                 }
             };
+        }
+
+
+        private void OpenGuideSite()
+        {
+            try
+            {
+                string guidePath = Path.Combine(AppContext.BaseDirectory, "guid", "index.html");
+
+                if (!File.Exists(guidePath))
+                {
+                    throw new FileNotFoundException($"Файл руководства не найден: {guidePath}");
+                }
+
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = guidePath,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                _uiManager.ShowError("Не удалось открыть руководство: " + ex.Message, includeRestoreText: false);
+            }
         }
 
         private void SaveAlgorithmFromTable(string algorithmName, IReadOnlyList<CommandRow> rows)

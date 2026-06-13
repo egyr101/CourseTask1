@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title data-i18n="pageTitle">Руководство по игре Drone Algorithm</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <header class="hero">
+        <button class="language-toggle" id="language-toggle" type="button">EN</button>
+        <div class="hero__content">
+            <p class="eyebrow" data-i18n="eyebrow">Учебная игра по параллельному программированию</p>
+            <h1 data-i18n="heroTitle">Руководство пользователя</h1>
+            <p class="lead" data-i18n="heroLead">
+                В игре нужно написать алгоритм для группы дронов так, чтобы они уничтожили все сорняки на карте.
+                Команды выполняются по тикам: внутри одного тика несколько дронов могут действовать параллельно.
+            </p>
+            <div class="hero__actions">
+                <a href="#commands" class="button" data-i18n="navCommands">Команды</a>
+                <a href="#maps" class="button button--secondary" data-i18n="navMaps">Карты</a>
+                <a href="#algorithms" class="button button--secondary" data-i18n="navAlgorithms">Алгоритмы</a>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <section class="card" id="goal">
+            <h2 data-i18n="goalTitle">Цель игры</h2>
+            <p data-i18n="goalText">
+                На карте находятся дроны и сорняки. Пользователь заполняет таблицу команд, запускает алгоритм и проверяет,
+                сможет ли алгоритм уничтожить все сорняки без ошибок.
+            </p>
+            <div class="grid two">
+                <div class="note note--green">
+                    <h3 data-i18n="successTitle">Успешное завершение</h3>
+                    <p data-i18n="successText">Все сорняки уничтожены, столкновений нет, дроны не вышли за границы карты.</p>
+                </div>
+                <div class="note note--red">
+                    <h3 data-i18n="errorTitle">Ошибка</h3>
+                    <p data-i18n="errorText">Дрон врезался в границу, столкнулся с другим дроном, атаковал пустую клетку или алгоритм не уничтожил все сорняки.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="card" id="commands">
+            <h2 data-i18n="commandsTitle">Как писать команды</h2>
+            <p data-i18n="commandsText">
+                Таблица команд состоит из тиков. Один тик — это один шаг алгоритма. Команды, записанные в одном тике,
+                выполняются параллельно.
+            </p>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th data-i18n="tableTarget">Адресат</th>
+                            <th data-i18n="tableAction">Действие</th>
+                            <th data-i18n="tableArgument">Аргумент</th>
+                            <th data-i18n="tableDescription">Описание</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td data-i18n="targetAll">Все</td>
+                            <td data-i18n="actionForward">Вперёд</td>
+                            <td>1, 2, 3...</td>
+                            <td data-i18n="descForward">Все дроны делают указанное количество шагов вперёд.</td>
+                        </tr>
+                        <tr>
+                            <td data-i18n="targetDrone1">Дрон 1</td>
+                            <td data-i18n="actionLeft">Налево</td>
+                            <td data-i18n="emptyOrOne">пусто или 1</td>
+                            <td data-i18n="descLeft">Дрон поворачивается на 90° влево.</td>
+                        </tr>
+                        <tr>
+                            <td data-i18n="targetDrone2">Дрон 2</td>
+                            <td data-i18n="actionRight">Направо</td>
+                            <td data-i18n="emptyOrOne">пусто или 1</td>
+                            <td data-i18n="descRight">Дрон поворачивается на 90° вправо.</td>
+                        </tr>
+                        <tr>
+                            <td data-i18n="targetDrone3">Дрон 3</td>
+                            <td data-i18n="actionAttack">Разряд</td>
+                            <td data-i18n="emptyOrOne">пусто или 1</td>
+                            <td data-i18n="descAttack">Дрон уничтожает сорняк в клетке перед собой.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="steps">
+                <div>
+                    <span class="step-number">1</span>
+                    <h3 data-i18n="step1Title">Выберите адресата</h3>
+                    <p data-i18n="step1Text">Можно выбрать конкретного дрона или команду «Все».</p>
+                </div>
+                <div>
+                    <span class="step-number">2</span>
+                    <h3 data-i18n="step2Title">Выберите действие</h3>
+                    <p data-i18n="step2Text">Доступны движения, повороты и атака.</p>
+                </div>
+                <div>
+                    <span class="step-number">3</span>
+                    <h3 data-i18n="step3Title">Запустите алгоритм</h3>
+                    <p data-i18n="step3Text">Нажмите «Выполнить» и дождитесь результата.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="card" id="parallel">
+            <h2 data-i18n="parallelTitle">Параллельное выполнение</h2>
+            <p data-i18n="parallelText">
+                Если в одном тике заданы команды для нескольких дронов, они начинают выполняться одновременно.
+                Для карт с большим количеством дронов тик может занимать несколько строк таблицы.
+            </p>
+            <pre><code data-i18n="parallelCode">Тик 1: Дрон 1 — Вперёд    Дрон 2 — Вперёд
+Тик 1: Дрон 3 — Разряд    Дрон 4 — Налево
+Тик 2: Все    — Вперёд</code></pre>
+            <p data-i18n="parallelExample">
+                В примере первые четыре команды относятся к одному тику, а команда «Все — Вперёд» выполнится уже следующим шагом.
+            </p>
+        </section>
+
+        <section class="card" id="score">
+            <h2 data-i18n="scoreTitle">Оценка алгоритма</h2>
+            <p data-i18n="scoreText">После успешного завершения игра показывает оценку алгоритма.</p>
+            <div class="formula" data-i18n="formula">
+                Оценка = повороты налево/направо + команды «Вперёд» × 2
+            </div>
+            <p data-i18n="scoreHint">
+                Команда «Разряд» не увеличивает оценку. Чем ниже оценка, тем короче и эффективнее алгоритм.
+            </p>
+        </section>
+
+        <section class="card" id="maps">
+            <h2 data-i18n="mapsTitle">Как создавать карты</h2>
+            <p data-i18n="mapsText">
+                Откройте меню <strong>Файл → Открыть редактор карт</strong>. В редакторе можно выбирать клетки и добавлять
+                или удалять дронов и сорняки.
+            </p>
+            <ul class="check-list">
+                <li data-i18n="mapRule1">На карте должен быть хотя бы один дрон.</li>
+                <li data-i18n="mapRule2">Дронов не может быть больше 10.</li>
+                <li data-i18n="mapRule3">Количество сорняков не должно быть меньше количества дронов.</li>
+                <li data-i18n="mapRule4">Дрон и сорняк нельзя поставить в одну и ту же клетку.</li>
+                <li data-i18n="mapRule5">Карта сохраняется в папку <code>levels</code> в формате JSON.</li>
+            </ul>
+            <button class="example-toggle" data-target="map-json" data-show-key="showMapJson" data-hide-key="hideMapJson" type="button">Показать пример JSON карты</button>
+            <pre class="hidden" id="map-json"><code>{
+  "drones": [
+    { "x": 2, "y": 5 },
+    { "x": 10, "y": 8 }
+  ],
+  "weeds": [
+    { "x": 3, "y": 5 },
+    { "x": 4, "y": 5 },
+    { "x": 11, "y": 8 }
+  ]
+}</code></pre>
+        </section>
+
+        <section class="card" id="algorithms">
+            <h2 data-i18n="algorithmsTitle">Как сохранять и загружать алгоритмы</h2>
+            <p data-i18n="algorithmsText">
+                Команды из таблицы можно сохранить через <strong>Файл → Сохранить алгоритм</strong>. Алгоритмы хранятся
+                в папке <code>algorithms</code> в формате JSON.
+            </p>
+            <ul class="check-list">
+                <li data-i18n="algorithmRule1">При сохранении укажите название алгоритма.</li>
+                <li data-i18n="algorithmRule2">При загрузке выберите JSON-файл из папки <code>algorithms</code>.</li>
+                <li data-i18n="algorithmRule3">Алгоритм содержит количество дронов, для которого он был создан.</li>
+                <li data-i18n="algorithmRule4">Если количество дронов на текущей карте другое, алгоритм не загрузится.</li>
+            </ul>
+            <button class="example-toggle" data-target="algorithm-json" data-show-key="showAlgorithmJson" data-hide-key="hideAlgorithmJson" type="button">Показать пример JSON алгоритма</button>
+            <pre class="hidden" id="algorithm-json"><code>{
+  "numberDronesOnMap": 2,
+  "ticks": [
+    {
+      "commands": [
+        { "target": "drone", "droneNumber": 1, "action": "forward", "repeat": 1 },
+        { "target": "drone", "droneNumber": 2, "action": "attack", "repeat": 1 }
+      ]
+    }
+  ]
+}</code></pre>
+        </section>
+
+        <section class="card" id="tips">
+            <h2 data-i18n="tipsTitle">Советы</h2>
+            <div class="tips">
+                <p data-i18n="tip1"><strong>Планируйте направление.</strong> Команда «Разряд» действует на клетку перед дроном, поэтому повороты важны.</p>
+                <p data-i18n="tip2"><strong>Проверяйте тики.</strong> Если несколько дронов должны действовать одновременно, помещайте команды в один тик.</p>
+                <p data-i18n="tip3"><strong>Следите за зарядами.</strong> Сумма зарядов дронов равна количеству сорняков, поэтому лишние атаки приведут к ошибке.</p>
+                <p data-i18n="tip4"><strong>Используйте тестовые алгоритмы.</strong> Они помогают проверить успешное прохождение, столкновение, выход за карту и неполное уничтожение сорняков.</p>
+            </div>
+        </section>
+    </main>
+
+    <button class="to-top" aria-label="Наверх" data-i18n-aria="toTopLabel">↑</button>
+
+    <script src="script.js"></script>
+</body>
+</html>

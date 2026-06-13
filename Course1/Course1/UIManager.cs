@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.IO;
+using System.Text.RegularExpressions;
 
 namespace DroneSimulator
 {
@@ -40,6 +41,7 @@ namespace DroneSimulator
         public event Action<string, LevelConfig>? MapEditorSaveRequested;
         public event Action<string, IReadOnlyList<CommandRow>>? AlgorithmSaveRequested;
         public event Action? AlgorithmLoadRequested;
+        public event Action? HelpRequested;
 
         private Desktop _desktop;
         private Grid _tableGrid;
@@ -675,6 +677,11 @@ namespace DroneSimulator
             menuPanel.Widgets.Add(_runButton);
 
             _helpButton = CreateTopMenuButton("Помощь");
+            _helpButton.TouchDown += (s, a) =>
+            {
+                CloseAllTopPanels();
+                HelpRequested?.Invoke();
+            };
             menuPanel.Widgets.Add(_helpButton);
 
             _settingsButton = CreateTopMenuButton("Настройки");
@@ -927,9 +934,89 @@ namespace DroneSimulator
         private void SetLanguage(GameLanguage language)
         {
             _language = language;
+            TranslateCommandTableToCurrentLanguage();
             UpdateLanguageTexts();
             RefreshTableUI();
             LanguageChanged?.Invoke(language);
+        }
+
+        private void TranslateCommandTableToCurrentLanguage()
+        {
+            foreach (var row in _tableData)
+            {
+                row.Target1 = LocalizeTargetFromAnyLanguage(row.Target1);
+                row.Target2 = LocalizeTargetFromAnyLanguage(row.Target2);
+                row.Action1 = LocalizeActionFromAnyLanguage(row.Action1);
+                row.Action2 = LocalizeActionFromAnyLanguage(row.Action2);
+            }
+        }
+
+        private string LocalizeTargetFromAnyLanguage(string target)
+        {
+            if (string.IsNullOrWhiteSpace(target))
+                return string.Empty;
+
+            string normalized = target.Trim();
+
+            if (normalized == "Все" || normalized.Equals("All", StringComparison.OrdinalIgnoreCase))
+                return TargetAllText();
+
+            if (normalized == "Красный" || normalized == "Красный дрон" ||
+                normalized.Equals("Red", StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals("Red drone", StringComparison.OrdinalIgnoreCase))
+            {
+                return TargetDroneText(0);
+            }
+
+            if (normalized == "Зелёный" || normalized == "Зеленый" ||
+                normalized == "Зелёный дрон" || normalized == "Зеленый дрон" ||
+                normalized.Equals("Green", StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals("Green drone", StringComparison.OrdinalIgnoreCase))
+            {
+                return TargetDroneText(1);
+            }
+
+            var russianMatch = Regex.Match(normalized, "^Дрон\\s+(\\d+)$", RegexOptions.IgnoreCase);
+            if (russianMatch.Success && int.TryParse(russianMatch.Groups[1].Value, out int russianNumber))
+                return FormatDroneTargetNumber(russianNumber);
+
+            var englishMatch = Regex.Match(normalized, "^Drone\\s+(\\d+)$", RegexOptions.IgnoreCase);
+            if (englishMatch.Success && int.TryParse(englishMatch.Groups[1].Value, out int englishNumber))
+                return FormatDroneTargetNumber(englishNumber);
+
+            return target;
+        }
+
+        private string FormatDroneTargetNumber(int droneNumber)
+        {
+            if (droneNumber < 1)
+                return string.Empty;
+
+            return _language == GameLanguage.Russian
+                ? $"Дрон {droneNumber}"
+                : $"Drone {droneNumber}";
+        }
+
+        private string LocalizeActionFromAnyLanguage(string action)
+        {
+            if (string.IsNullOrWhiteSpace(action))
+                return string.Empty;
+
+            string normalized = action.Trim();
+
+            if (normalized == "Вперёд" || normalized == "Вперед" || normalized.Equals("Forward", StringComparison.OrdinalIgnoreCase))
+                return ActionForwardText();
+
+            if (normalized == "Налево" || normalized.Equals("Left", StringComparison.OrdinalIgnoreCase))
+                return ActionLeftText();
+
+            if (normalized == "Направо" || normalized.Equals("Right", StringComparison.OrdinalIgnoreCase))
+                return ActionRightText();
+
+            if (normalized == "Разряд" || normalized.Equals("Attack", StringComparison.OrdinalIgnoreCase))
+                return ActionAttackText();
+
+            return action;
         }
 
         private void SetDroneSpeed(float speedMultiplier)
@@ -1006,6 +1093,7 @@ namespace DroneSimulator
 
             UpdateSettingsStateLabels();
             UpdateDroneCharges(_lastChargeInfos);
+            _mapEditorWindow?.SetLanguage(_language);
         }
 
         private void UpdateSettingsStateLabels()
