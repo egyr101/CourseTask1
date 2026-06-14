@@ -2,7 +2,6 @@ using Microsoft.Xna.Framework;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Text.Json;
 
 namespace DroneSimulator
@@ -39,42 +38,20 @@ namespace DroneSimulator
 
         public static LevelConfig LoadFromFile(string path)
         {
-            if (string.IsNullOrWhiteSpace(path))
-                throw new InvalidOperationException("Путь к файлу карты не указан.");
-
-            if (!File.Exists(path))
-                throw new FileNotFoundException($"Файл карты не найден: {path}");
-
-            if (!string.Equals(Path.GetExtension(path), ".json", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Файл карты должен иметь расширение .json.");
-
-            string json = File.ReadAllText(path);
-
-            var options = new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            };
-
-            LevelConfig? config;
-
-            try
-            {
-                config = JsonSerializer.Deserialize<LevelConfig>(json, options);
-            }
-            catch (JsonException ex)
-            {
-                throw new InvalidOperationException($"Файл карты содержит некорректный JSON: {ex.Message}");
-            }
+            LevelConfig config = JsonFileHelper.LoadRequiredJson<LevelConfig>(path, "карты");
 
             Validate(config);
-            return config!;
+            return config;
         }
 
         public static string SaveToLevelsFolder(string mapName, LevelConfig config)
         {
             Validate(config);
 
-            string safeName = CreateSafeMapFileName(mapName);
+            string safeName = FileNameHelper.CreateJsonFileName(
+                mapName,
+                "Название карты не указано.",
+                "Название карты содержит только недопустимые символы.");
             Directory.CreateDirectory(LevelsDirectory);
 
             string path = Path.Combine(LevelsDirectory, safeName);
@@ -84,8 +61,7 @@ namespace DroneSimulator
                 WriteIndented = true
             };
 
-            string json = JsonSerializer.Serialize(config, options);
-            File.WriteAllText(path, json);
+            JsonFileHelper.SaveJson(path, config, options);
 
             return path;
         }
@@ -117,48 +93,6 @@ namespace DroneSimulator
 
             EnsureNoDuplicatePoints(config.Drones, "drones");
             EnsureNoDuplicatePoints(config.Weeds, "weeds");
-        }
-
-        private static string CreateSafeMapFileName(string mapName)
-        {
-            if (string.IsNullOrWhiteSpace(mapName))
-                throw new InvalidOperationException("Название карты не указано.");
-
-            string nameWithoutExtension = mapName.Trim();
-
-            if (nameWithoutExtension.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-            {
-                nameWithoutExtension = nameWithoutExtension.Substring(0, nameWithoutExtension.Length - ".json".Length);
-            }
-
-            if (string.IsNullOrWhiteSpace(nameWithoutExtension))
-                throw new InvalidOperationException("Название карты не указано.");
-
-            var invalidChars = Path.GetInvalidFileNameChars().ToHashSet();
-            var result = new List<char>();
-
-            foreach (char ch in nameWithoutExtension)
-            {
-                if (invalidChars.Contains(ch))
-                {
-                    result.Add('_');
-                }
-                else if (char.IsWhiteSpace(ch))
-                {
-                    result.Add('_');
-                }
-                else
-                {
-                    result.Add(ch);
-                }
-            }
-
-            string safeName = new string(result.ToArray()).Trim('_');
-
-            if (string.IsNullOrWhiteSpace(safeName))
-                throw new InvalidOperationException("Название карты содержит только недопустимые символы.");
-
-            return safeName + ".json";
         }
 
         private static void EnsureNoDuplicatePoints(List<GridPointConfig> points, string sectionName)

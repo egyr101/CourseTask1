@@ -52,7 +52,10 @@ namespace DroneSimulator
             AlgorithmConfig config = FromCommandRows(rows, droneCount);
             Validate(config, droneCount);
 
-            string safeName = CreateSafeFileName(algorithmName);
+            string safeName = FileNameHelper.CreateJsonFileName(
+                algorithmName,
+                "Название алгоритма не указано.",
+                "Название алгоритма содержит только недопустимые символы.");
             Directory.CreateDirectory(AlgorithmsDirectory);
 
             string path = Path.Combine(AlgorithmsDirectory, safeName);
@@ -63,43 +66,17 @@ namespace DroneSimulator
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase
             };
 
-            string json = JsonSerializer.Serialize(config, options);
-            File.WriteAllText(path, json);
+            JsonFileHelper.SaveJson(path, config, options);
 
             return path;
         }
 
         public static AlgorithmConfig LoadFromFile(string path, int droneCount)
         {
-            if (string.IsNullOrWhiteSpace(path))
-                throw new InvalidOperationException("Путь к файлу алгоритма не указан.");
-
-            if (!File.Exists(path))
-                throw new FileNotFoundException($"Файл алгоритма не найден: {path}");
-
-            if (!string.Equals(Path.GetExtension(path), ".json", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Файл алгоритма должен иметь расширение .json.");
-
-            string json = File.ReadAllText(path);
-
-            var options = new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            };
-
-            AlgorithmConfig? config;
-
-            try
-            {
-                config = JsonSerializer.Deserialize<AlgorithmConfig>(json, options);
-            }
-            catch (JsonException ex)
-            {
-                throw new InvalidOperationException($"Файл алгоритма содержит некорректный JSON: {ex.Message}");
-            }
+            AlgorithmConfig config = JsonFileHelper.LoadRequiredJson<AlgorithmConfig>(path, "алгоритма");
 
             Validate(config, droneCount);
-            return config!;
+            return config;
         }
 
         public static List<CommandRow> ToCommandRows(
@@ -359,48 +336,5 @@ namespace DroneSimulator
             };
         }
 
-        private static string CreateSafeFileName(string algorithmName)
-        {
-            if (string.IsNullOrWhiteSpace(algorithmName))
-                throw new InvalidOperationException("Название алгоритма не указано.");
-
-            string nameWithoutExtension = algorithmName.Trim();
-
-            if (nameWithoutExtension.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-            {
-                nameWithoutExtension = nameWithoutExtension.Substring(
-                    0,
-                    nameWithoutExtension.Length - ".json".Length);
-            }
-
-            if (string.IsNullOrWhiteSpace(nameWithoutExtension))
-                throw new InvalidOperationException("Название алгоритма не указано.");
-
-            var invalidChars = Path.GetInvalidFileNameChars().ToHashSet();
-            var result = new List<char>();
-
-            foreach (char ch in nameWithoutExtension)
-            {
-                if (invalidChars.Contains(ch))
-                {
-                    result.Add('_');
-                }
-                else if (char.IsWhiteSpace(ch))
-                {
-                    result.Add('_');
-                }
-                else
-                {
-                    result.Add(ch);
-                }
-            }
-
-            string safeName = new string(result.ToArray()).Trim('_');
-
-            if (string.IsNullOrWhiteSpace(safeName))
-                throw new InvalidOperationException("Название алгоритма содержит только недопустимые символы.");
-
-            return safeName + ".json";
-        }
     }
 }

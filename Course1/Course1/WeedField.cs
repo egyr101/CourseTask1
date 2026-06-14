@@ -10,11 +10,11 @@ namespace DroneSimulator
 
         public IReadOnlyList<Weed> Weeds => _weeds;
 
-        public bool HasAliveWeeds => _weeds.Any(weed => !weed.IsDestroyed);
+        public bool HasAliveWeeds => _weeds.Any(IsAlive);
 
         public int TotalCount => _weeds.Count;
 
-        public int AliveCount => _weeds.Count(weed => !weed.IsDestroyed);
+        public int AliveCount => _weeds.Count(IsAlive);
 
         public int DestroyedCount => _weeds.Count(weed => weed.IsDestroyed);
 
@@ -34,7 +34,7 @@ namespace DroneSimulator
         public bool TryDestroyAt(Vector2 position)
         {
             var weed = _weeds.FirstOrDefault(item =>
-                !item.IsDestroyed && item.GridPosition == position);
+                IsAlive(item) && item.GridPosition == position);
 
             if (weed == null)
                 return false;
@@ -54,13 +54,13 @@ namespace DroneSimulator
         public void RestoreSnapshot(IEnumerable<WeedSnapshot> snapshot)
         {
             _weeds.Clear();
-
-            foreach (var item in snapshot)
-            {
-                _weeds.Add(new Weed(item.GridPosition, item.IsDestroyed));
-            }
+            _weeds.AddRange(snapshot.Select(item => new Weed(item.GridPosition, item.IsDestroyed)));
         }
 
+        private static bool IsAlive(Weed weed)
+        {
+            return !weed.IsDestroyed;
+        }
     }
 
     public readonly struct WeedSnapshot

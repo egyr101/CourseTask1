@@ -7,6 +7,8 @@ namespace DroneSimulator
 {
     public sealed class DroneCommandExecutor
     {
+        private const string IncompleteAlgorithmError = "Алгоритм завершился, но на поле остались сорняки.";
+
         private readonly MapRenderer _mapRenderer;
         private readonly List<DroneRuntimeState> _drones;
 
@@ -199,26 +201,11 @@ namespace DroneSimulator
                     return;
                 }
 
-                CheckCollisions();
-
-                if (CheckCompletion())
+                if (!PrepareNextParallelStep())
                     return;
 
-                if (!HasActiveTick())
-                {
-                    if (!HasWaitingTicks())
-                    {
-                        Fail("Алгоритм завершился, но на поле остались сорняки.");
-                        return;
-                    }
-
-                    LoadNextTick();
-                }
-
                 ExecuteOneParallelStep();
-
-                CheckCollisions();
-                CheckCompletion();
+                CheckStateAfterExecutedStep();
             }
             catch (Exception ex)
             {
@@ -228,21 +215,8 @@ namespace DroneSimulator
 
         private void ExecuteManualStep()
         {
-            CheckCollisions();
-
-            if (CheckCompletion())
+            if (!PrepareNextParallelStep())
                 return;
-
-            if (!HasActiveTick())
-            {
-                if (!HasWaitingTicks())
-                {
-                    Fail("Алгоритм завершился, но на поле остались сорняки.");
-                    return;
-                }
-
-                LoadNextTick();
-            }
 
             ExecuteOneParallelStep();
             _hasPendingStepResultCheck = true;
@@ -254,17 +228,42 @@ namespace DroneSimulator
             }
         }
 
-        private void CheckStateAfterExecutedStep()
+        private bool PrepareNextParallelStep()
         {
             CheckCollisions();
 
             if (CheckCompletion())
-                return;
+                return false;
 
-            if (!HasActiveTick() && !HasWaitingTicks())
+            if (!HasActiveTick())
             {
-                Fail("Алгоритм завершился, но на поле остались сорняки.");
+                if (!HasWaitingTicks())
+                    return FailBecauseAlgorithmEndedWithAliveWeeds();
+
+                LoadNextTick();
             }
+
+            return true;
+        }
+
+        private void CheckStateAfterExecutedStep()
+        {
+            CheckCollisions();
+
+            if (!CheckCompletion())
+                FailIfAlgorithmEndedWithAliveWeeds();
+        }
+
+        private bool FailBecauseAlgorithmEndedWithAliveWeeds()
+        {
+            Fail(IncompleteAlgorithmError);
+            return false;
+        }
+
+        private void FailIfAlgorithmEndedWithAliveWeeds()
+        {
+            if (!HasActiveTick() && !HasWaitingTicks())
+                Fail(IncompleteAlgorithmError);
         }
 
         private AlgorithmSnapshot CreateSnapshot()
@@ -425,38 +424,33 @@ namespace DroneSimulator
             {
                 case DroneCommandType.MoveForward:
                     MoveForward(droneState);
-                    AddScoreForCommand(command);
                     break;
 
                 case DroneCommandType.TurnLeft:
                     TurnDroneLeft(droneState);
-                    AddScoreForCommand(command);
                     break;
 
                 case DroneCommandType.TurnRight:
                     TurnDroneRight(droneState);
-                    AddScoreForCommand(command);
                     break;
 
                 case DroneCommandType.Attack:
                     Attack(droneState);
                     break;
             }
+
+            _algorithmScore += GetCommandScore(command);
         }
 
-        private void AddScoreForCommand(DroneCommandType command)
+        private static int GetCommandScore(DroneCommandType command)
         {
-            switch (command)
+            return command switch
             {
-                case DroneCommandType.MoveForward:
-                    _algorithmScore += 2;
-                    break;
-
-                case DroneCommandType.TurnLeft:
-                case DroneCommandType.TurnRight:
-                    _algorithmScore += 1;
-                    break;
-            }
+                DroneCommandType.MoveForward => 2,
+                DroneCommandType.TurnLeft => 1,
+                DroneCommandType.TurnRight => 1,
+                _ => 0
+            };
         }
 
         private static void TurnDroneLeft(DroneRuntimeState droneState)
