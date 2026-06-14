@@ -1,4 +1,4 @@
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 using Myra.Graphics2D;
 using Myra.Graphics2D.UI;
 using Myra.Graphics2D.Brushes;
@@ -1264,11 +1264,6 @@ namespace DroneSimulator
                    !string.IsNullOrWhiteSpace(action);
         }
 
-        private bool IsRowFull(CommandRow row)
-        {
-            return IsCommandSlotOccupied(row.Target1, row.Action1) &&
-                   IsCommandSlotOccupied(row.Target2, row.Action2);
-        }
 
         private bool TickContainsAllTarget(int tickNumber)
         {

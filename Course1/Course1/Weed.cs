@@ -1,4 +1,4 @@
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 
 namespace DroneSimulator
 {
@@ -18,9 +18,5 @@ namespace DroneSimulator
             IsDestroyed = true;
         }
 
-        public void Restore()
-        {
-            IsDestroyed = false;
-        }
     }
 }
